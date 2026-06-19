@@ -1,0 +1,189 @@
+datasource db {
+  provider   = "postgresql"
+  extensions = [pgvector(map: "vector")]
+}
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+  output          = "../src/generated/client"
+}
+
+model User {
+  id           String          @id @default(uuid())
+  email        String          @unique
+  name         String?
+  passwordHash String
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  preferences  UserPreference?
+  matches      JobMatch[]
+  alerts       Alert[]
+  applications Application[]
+  resumes      Resume[]
+
+  @@map("users")
+}
+
+model Resume {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fileUrl         String
+  parsedText      String   @db.Text
+  embeddingVector Unsupported("vector(1536)")?
+  createdAt       DateTime @default(now())
+
+  @@map("resumes")
+}
+
+model Company {
+  id          String       @id @default(uuid())
+  name        String
+  website     String
+  industry    String?
+  source      String?
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  careerPages CareerPage[]
+  jobs        Job[]
+
+  @@map("companies")
+}
+
+model CareerPage {
+  id             String     @id @default(uuid())
+  companyId      String
+  company        Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  url            String
+  crawlFrequency String     @default("daily")
+  lastCrawledAt  DateTime?
+  status         String     @default("pending")
+  crawlRuns      CrawlRun[]
+  jobs           Job[]
+
+  @@map("career_pages")
+}
+
+model Job {
+  id              String         @id @default(uuid())
+  companyId       String
+  company         Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  careerPageId    String?
+  careerPage      CareerPage?    @relation(fields: [careerPageId], references: [id], onDelete: SetNull)
+  externalJobId   String?
+  title           String
+  location        String?
+  employmentType  String?
+  experienceLevel String?
+  salaryMin       Decimal?       @db.Decimal(12, 2)
+  salaryMax       Decimal?       @db.Decimal(12, 2)
+  description     String         @db.Text
+  requirements    String?        @db.Text
+  applyUrl        String?
+  postedAt        DateTime?
+  isActive        Boolean        @default(true)
+  snapshots       JobSnapshot[]
+  embeddings      JobEmbedding[]
+  matches         JobMatch[]
+  alerts          Alert[]
+  applications    Application[]
+
+  @@map("jobs")
+}
+
+model JobSnapshot {
+  id           String   @id @default(uuid())
+  jobId        String
+  job          Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  snapshotData Json
+  createdAt    DateTime @default(now())
+
+  @@map("job_snapshots")
+}
+
+model JobEmbedding {
+  id        String                      @id @default(uuid())
+  jobId     String                      @unique
+  job       Job                         @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  vector    Unsupported("vector(1536)")
+  createdAt DateTime                    @default(now())
+
+  @@map("job_embeddings")
+}
+
+model UserPreference {
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  locations        Json     @default("[]")
+  keywords         Json     @default("[]")
+  technologies     Json     @default("[]")
+  experienceLevels Json     @default("[]")
+  employmentTypes  Json     @default("[]")
+
+  @@map("user_preferences")
+}
+
+model JobMatch {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  score     Float
+  reason    String?  @db.Text
+  matchedAt DateTime @default(now())
+
+  @@map("job_matches")
+}
+
+model Alert {
+  id      String    @id @default(uuid())
+  userId  String
+  user    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobId   String
+  job     Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  channel String
+  status  String    @default("pending")
+  sentAt  DateTime?
+
+  @@map("alerts")
+}
+
+model Application {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  status    String   @default("applied")
+  notes     String?  @db.Text
+  appliedAt DateTime @default(now())
+
+  @@map("applications")
+}
+
+model CrawlRun {
+  id           String     @id @default(uuid())
+  careerPageId String
+  careerPage   CareerPage @relation(fields: [careerPageId], references: [id], onDelete: Cascade)
+  status       String
+  startedAt    DateTime   @default(now())
+  completedAt  DateTime?
+  jobsFound    Int        @default(0)
+  errorMessage String?    @db.Text
+
+  @@map("crawl_runs")
+}
+
+model WorkerLog {
+  id         String   @id @default(uuid())
+  workerType String
+  jobId      String?
+  message    String   @db.Text
+  level      String   @default("info")
+  createdAt  DateTime @default(now())
+
+  @@map("worker_logs")
+}
