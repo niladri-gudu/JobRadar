@@ -22,4 +22,11 @@ export const config = {
     openaiApiKey: process.env.OPENAI_API_KEY,
     model: process.env.LLM_MODEL || 'gemini-2.5-flash',
   },
+  r2: {
+    accountId: process.env.R2_ACCOUNT_ID,
+    accessKeyId: process.env.R2_ACCESS_KEY_ID,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+    bucketName: process.env.R2_BUCKET_NAME,
+    publicUrl: process.env.R2_PUBLIC_URL,
+  },
 };

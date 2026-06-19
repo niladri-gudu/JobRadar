@@ -1,12 +1,22 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
-import { fromNodeHeaders } from 'better-auth/node';
+import multipart from '@fastify/multipart';
+import fastifyStatic from '@fastify/static';
+import path from 'path';
+import fs from 'fs';
 import { config } from './config';
-import { auth } from './lib/auth';
+import { authRoutes } from './modules/auth/auth.routes';
+import { resumeRoutes } from './modules/resume/resume.routes';
 
 const fastify = Fastify({
   logger: true,
 });
+
+// Ensure upload directory exists
+const uploadResumesDir = path.join(process.cwd(), 'uploads', 'resumes');
+if (!fs.existsSync(uploadResumesDir)) {
+  fs.mkdirSync(uploadResumesDir, { recursive: true });
+}
 
 // Register CORS
 fastify.register(cors, {
@@ -15,6 +25,21 @@ fastify.register(cors, {
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
 });
 
+// Register Multipart support
+fastify.register(multipart, {
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit
+  },
+});
+
+// Serve uploaded resumes statically
+fastify.register(fastifyStatic, {
+  root: path.join(process.cwd(), 'uploads'),
+  prefix: '/uploads/',
+  decorateReply: false, // Avoid collision if other plugins decorate reply with static
+});
+
+// Health check endpoint
 fastify.get('/health', async () => {
   return {
     status: 'ok',
@@ -25,90 +50,9 @@ fastify.get('/health', async () => {
   };
 });
 
-// Custom register endpoint to satisfy PRD
-fastify.post('/auth/register', async (request, reply) => {
-  const { email, password, name } = request.body as any;
-  if (!email || !password) {
-    return reply.status(400).send({ error: 'Email and password are required' });
-  }
-
-  try {
-    const result = await auth.api.signUpEmail({
-      body: { email, password, name: name || undefined },
-      asResponse: true,
-    });
-
-    reply.status(result.status);
-    result.headers.forEach((value, key) => {
-      reply.header(key, value);
-    });
-
-    const bodyText = await result.text();
-    let data;
-    try {
-      data = JSON.parse(bodyText);
-    } catch {
-      data = bodyText;
-    }
-    return reply.send(data);
-  } catch (error: any) {
-    fastify.log.error(error);
-    return reply.status(400).send({ error: error.message || 'Registration failed' });
-  }
-});
-
-// Custom login endpoint to satisfy PRD
-fastify.post('/auth/login', async (request, reply) => {
-  const { email, password } = request.body as any;
-  if (!email || !password) {
-    return reply.status(400).send({ error: 'Email and password are required' });
-  }
-
-  try {
-    const result = await auth.api.signInEmail({
-      body: { email, password },
-      asResponse: true,
-    });
-
-    reply.status(result.status);
-    result.headers.forEach((value, key) => {
-      reply.header(key, value);
-    });
-
-    const bodyText = await result.text();
-    let data;
-    try {
-      data = JSON.parse(bodyText);
-    } catch {
-      data = bodyText;
-    }
-    return reply.send(data);
-  } catch (error: any) {
-    fastify.log.error(error);
-    return reply.status(400).send({ error: error.message || 'Login failed' });
-  }
-});
-
-// Better Auth catch-all route handler
-fastify.all('/api/auth/*', async (request, reply) => {
-  const url = new URL(request.url, config.apiUrl);
-  const headers = fromNodeHeaders(request.headers);
-  
-  const req = new Request(url.toString(), {
-    method: request.method,
-    headers,
-    body: request.body ? JSON.stringify(request.body) : undefined,
-  });
-  
-  const response = await auth.handler(req);
-  
-  reply.status(response.status);
-  response.headers.forEach((value, key) => {
-    reply.header(key, value);
-  });
-  
-  return reply.send(response.body ? await response.text() : null);
-});
+// Register modular routes
+fastify.register(authRoutes);
+fastify.register(resumeRoutes);
 
 const start = async () => {
   try {

@@ -5,6 +5,10 @@ This document establishes the operational rules for Gemini and all workspace cod
 ## 1. Primary Directives & Implementation Truths
 - **Follow the PRD:** Treat `PROJECT_SPECIFICATION.md` as the definitive authority for all application features, system architecture, endpoints, database schemas, and backend configurations. 
 - **Enforce Visual Tokens:** Adhere strictly to the "Zen Systems Engineering" language defined in `DESIGN.md`. Ensure all UI generation relies strictly on the layout behaviors, fonts, and hex mappings outlined there (e.g., `#050505` canvas, `#0B0B0C` surface background, flat borders, no box-shadows).
+- **Modular Backend Architecture**: Always isolate API features into modular subfolders under `src/modules/[moduleName]`. Each feature module must strictly follow a three-tiered separation:
+  1. **Routes (`*.routes.ts`)**: Binds routes and maps methods to controller functions.
+  2. **Controller (`*.controller.ts`)**: Handles HTTP request parsing, Fastify response formatting, and error catching.
+  3. **Service (`*.service.ts`)**: Executes pure business logic, database queries, and background queue handling.
 
 ---
 
