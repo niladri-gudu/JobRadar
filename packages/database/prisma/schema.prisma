@@ -6,21 +6,24 @@ datasource db {
 generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["postgresqlExtensions"]
-  output          = "../src/generated/client"
+  output          = "../dist/generated/client"
 }
 
 model User {
-  id           String          @id @default(uuid())
-  email        String          @unique
-  name         String?
-  passwordHash String
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
-  preferences  UserPreference?
-  matches      JobMatch[]
-  alerts       Alert[]
-  applications Application[]
-  resumes      Resume[]
+  id            String          @id @default(uuid())
+  email         String          @unique
+  name          String?
+  emailVerified Boolean         @default(false)
+  image         String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  preferences   UserPreference?
+  matches       JobMatch[]
+  alerts        Alert[]
+  applications  Application[]
+  resumes       Resume[]
+  sessions      Session[]
+  accounts      Account[]
 
   @@map("users")
 }
@@ -186,4 +189,46 @@ model WorkerLog {
   createdAt  DateTime @default(now())
 
   @@map("worker_logs")
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model Account {
+  id                    String    @id @default(uuid())
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  expiresAt             DateTime?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  @@unique([providerId, accountId])
+  @@map("accounts")
+}
+
+model Verification {
+  id         String    @id @default(uuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime? @default(now())
+  updatedAt  DateTime? @updatedAt
+
+  @@map("verifications")
 }

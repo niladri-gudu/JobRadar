@@ -6,7 +6,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 export const config = {
   env: process.env.NODE_ENV || 'development',
-  port: parseInt(process.env.PORT || '3001', 10),
+  port: parseInt(process.env.PORT || '8000', 10),
   databaseUrl: process.env.DATABASE_URL,
   redis: {
     host: process.env.REDIS_HOST || '127.0.0.1',

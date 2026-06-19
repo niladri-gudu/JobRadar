@@ -1,4 +1,4 @@
-import { PrismaClient } from './generated/client';
+import { PrismaClient } from '../dist/generated/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import path from 'path';
@@ -17,5 +17,5 @@ const pool = new Pool({ connectionString });
 const adapter = new PrismaPg(pool);
 
 export const db = new PrismaClient({ adapter });
-export * from './generated/client';
+export * from '../dist/generated/client';
 export { pool }; // Export pool in case we need direct raw queries (e.g. vector operations)
