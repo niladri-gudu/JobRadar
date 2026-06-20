@@ -219,6 +219,71 @@ System must:
 
 ---
 
+## Hiring Intelligence
+
+The system must help users identify the most relevant person to contact after applying for a role.
+
+Capabilities:
+
+* Detect recruiter names from job descriptions
+* Detect hiring manager names from job descriptions
+* Detect recruiter email addresses
+* Detect recruiter LinkedIn profiles
+* Detect recruiter X/Twitter profiles
+* Discover company hiring contacts when recruiter information is unavailable
+* Rank discovered contacts by relevance
+* Generate personalized outreach suggestions
+
+---
+
+## Contact Discovery
+
+The system should attempt to identify hiring contacts using multiple strategies.
+
+### Strategy 1: Direct Extraction
+
+Extract information directly from:
+
+* Job descriptions
+* Career pages
+* Application pages
+
+Examples:
+
+* Recruiter Name
+* Hiring Manager Name
+* Talent Acquisition Partner
+* Recruiting Coordinator
+
+---
+
+### Strategy 2: Company Contact Discovery
+
+If no recruiter information exists:
+
+* Find company LinkedIn page
+* Find company X/Twitter account
+* Find talent acquisition team members
+* Find recruiters associated with the company
+* Find engineering managers associated with the company
+
+---
+
+### Strategy 3: Hiring Team Discovery
+
+For technical roles:
+
+The system should attempt to identify:
+
+* Engineering Managers
+* Tech Leads
+* Head of Engineering
+* VP Engineering
+
+as potential contacts.
+
+---
+
 # 6. Non Functional Requirements
 
 ## Performance
@@ -465,6 +530,56 @@ Store result.
 ↓
 
 Notify user.
+
+---
+
+# 11.5 Hiring Intelligence Flow
+
+Job Discovered
+
+↓
+
+Extract Recruiter Information
+
+↓
+
+Recruiter Found?
+
+├─ Yes
+│
+└─ Store Contact
+
+↓
+
+No
+
+↓
+
+Company Contact Discovery
+
+↓
+
+Find Recruiters
+
+↓
+
+Find Hiring Managers
+
+↓
+
+Rank Contacts
+
+↓
+
+Generate Contact Recommendations
+
+↓
+
+Store Results
+
+↓
+
+Display To User
 
 ---
 
@@ -794,6 +909,82 @@ createdAt
 
 ---
 
+## Contact
+
+Purpose:
+
+Store discovered hiring contacts.
+
+Fields:
+
+id
+
+companyId
+
+name
+
+role
+
+email
+
+linkedinUrl
+
+twitterUrl
+
+source
+
+confidenceScore
+
+createdAt
+
+updatedAt
+
+---
+
+## JobContact
+
+Purpose:
+
+Associate hiring contacts with jobs.
+
+Fields:
+
+id
+
+jobId
+
+contactId
+
+priority
+
+matchReason
+
+createdAt
+
+---
+
+## OutreachTemplate
+
+Purpose:
+
+Store AI-generated outreach drafts.
+
+Fields:
+
+id
+
+jobId
+
+contactId
+
+type
+
+content
+
+createdAt
+
+---
+
 # 14. Queue Architecture
 
 Queue 1
@@ -899,6 +1090,40 @@ Missing Skills
 
 ---
 
+## Hiring Intelligence
+
+Responsibilities:
+
+* Identify recruiters
+* Identify hiring managers
+* Rank discovered contacts
+* Generate outreach recommendations
+
+Outputs:
+
+* Recommended Contact
+* Contact Confidence Score
+* Outreach Strategy
+
+---
+
+## Outreach Generation
+
+Generate:
+
+* LinkedIn Message
+* X/Twitter DM
+* Cold Email
+
+based on:
+
+* Resume
+* Job Description
+* Contact Role
+* Company Information
+
+---
+
 # 16. API Design
 
 POST /auth/register
@@ -940,6 +1165,20 @@ Matches Generated
 Notifications Sent
 
 Applications Submitted
+
+Additional Metrics
+
+Recruiters Found
+
+Hiring Managers Found
+
+Contact Discovery Success Rate
+
+Outreach Messages Generated
+
+Jobs With Contact Information
+
+Interview Conversion Tracking
 
 ---
 
@@ -994,3 +1233,23 @@ without user intervention.
 JobRadar | Distributed Job Discovery & Career Intelligence Platform
 
 Built an AI-powered job intelligence platform that automatically discovers company career pages, crawls job listings, performs semantic resume-to-job matching, and delivers personalized opportunity alerts through an event-driven architecture. Designed distributed crawling workers, AI matching pipelines, background processing queues, notification services, and historical job tracking using Fastify, PostgreSQL, Redis, BullMQ, Playwright, and LLM-powered ranking systems.
+
+---
+
+# 20. Competitive Advantages
+
+1. Automated Company Discovery
+
+2. Distributed Career Page Crawling
+
+3. AI Resume Matching
+
+4. Hiring Intelligence
+
+5. Contact Discovery
+
+6. AI Outreach Generation
+
+7. Application Prioritization
+
+Unlike traditional job boards, JobRadar does not stop after discovering jobs. The platform assists users throughout the entire job acquisition workflow, from job discovery to recruiter outreach.

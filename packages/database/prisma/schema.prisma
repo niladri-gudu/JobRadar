@@ -40,18 +40,39 @@ model Resume {
   @@map("resumes")
 }
 
+enum CompanyStatus {
+  PENDING
+  VALIDATED
+  REJECTED
+}
+
 model Company {
-  id          String       @id @default(uuid())
-  name        String
-  website     String
-  industry    String?
-  source      String?
-  isActive    Boolean      @default(true)
-  createdAt   DateTime     @default(now())
-  careerPages CareerPage[]
-  jobs        Job[]
+  id               String        @id @default(uuid())
+  name             String
+  website          String
+  normalizedDomain String        @unique
+  industry         String?
+  source           String
+  status           CompanyStatus @default(PENDING)
+  isActive         Boolean       @default(true)
+  createdAt        DateTime      @default(now())
+  careerPages      CareerPage[]
+  jobs             Job[]
 
   @@map("companies")
+}
+
+model DiscoveryRun {
+  id             String    @id @default(uuid())
+  source         String
+  companiesFound Int       @default(0)
+  companiesAdded Int       @default(0)
+  duplicates     Int       @default(0)
+  failures       Int       @default(0)
+  startedAt      DateTime  @default(now())
+  completedAt    DateTime?
+
+  @@map("discovery_runs")
 }
 
 model CareerPage {

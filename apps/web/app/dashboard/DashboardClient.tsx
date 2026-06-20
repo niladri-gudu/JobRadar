@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Terminal as TerminalIcon, 
@@ -12,7 +12,14 @@ import {
   Briefcase, 
   ExternalLink,
   Search,
-  Bell
+  Bell,
+  Building,
+  RefreshCw,
+  Plus,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
+  FolderOpen
 } from 'lucide-react';
 import { authClient } from '../../lib/auth-client';
 import { User } from '../../lib/auth-server';
@@ -21,58 +28,10 @@ interface DashboardClientProps {
   user: User;
 }
 
-// Mock job matches to show in the high-density feed
-const mockJobs = [
-  {
-    id: '1',
-    title: 'Senior Systems Engineer',
-    company: 'Vercel',
-    location: 'Remote, US',
-    score: 95,
-    tags: ['Rust', 'Go', 'Kubernetes', 'HTTP/3'],
-    reason: 'Matches your expertise in high-concurrency network servers and distributed edge runtimes. The profile requires deep networking knowledge which aligns with your projects.',
-    postedAt: '2h ago',
-    url: '#'
-  },
-  {
-    id: '2',
-    title: 'Lead Platform Architect',
-    company: 'Stripe',
-    location: 'San Francisco, CA',
-    score: 88,
-    tags: ['Ruby', 'Java', 'PCI-DSS', 'Distributed Systems'],
-    reason: 'High correlation with your ledger system design experience. Recommended due to core infra scale and API design requirements.',
-    postedAt: '5h ago',
-    url: '#'
-  },
-  {
-    id: '3',
-    title: 'Developer Experience Engineer',
-    company: 'Supabase',
-    location: 'Remote',
-    score: 82,
-    tags: ['TypeScript', 'PostgreSQL', 'Rust', 'Next.js'],
-    reason: 'Matches web stack profiling. Strong matching on PostgreSQL internals knowledge and frontend integration mechanics.',
-    postedAt: '1d ago',
-    url: '#'
-  },
-  {
-    id: '4',
-    title: 'Distributed Infrastructure Specialist',
-    company: 'Cloudflare',
-    location: 'Austin, TX',
-    score: 64,
-    tags: ['C++', 'Rust', 'WASM', 'Linux Kernel'],
-    reason: 'Medium score due to heavy C++ requirement. However, your WASM runtime and memory sandbox skills are highly relevant.',
-    postedAt: '2d ago',
-    url: '#'
-  }
-];
-
 export default function DashboardClient({ user }: DashboardClientProps) {
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
-  const [filterText, setFilterText] = useState('');
+  const [activeTab, setActiveTab] = useState<'opportunities' | 'companies'>('companies');
 
   // Resume states
   const [resume, setResume] = useState<any>(null);
@@ -80,19 +39,38 @@ export default function DashboardClient({ user }: DashboardClientProps) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Companies Directory states
+  const [companies, setCompanies] = useState<any[]>([]);
+  const [loadingCompanies, setLoadingCompanies] = useState(true);
+  const [companySearch, setCompanySearch] = useState('');
+  const [companySourceFilter, setCompanySourceFilter] = useState('');
+  const [companyStatusFilter, setCompanyStatusFilter] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, pages: 1 });
+
+  // Company stats
+  const [stats, setStats] = useState<any>({ total: 0, validated: 0, rejected: 0, pending: 0, sources: {}, runsCount: 0 });
+  const [loadingStats, setLoadingStats] = useState(true);
+
+  // Manual crawl URL input
+  const [crawlUrlInput, setCrawlUrlInput] = useState('');
+  const [submittingCrawl, setSubmittingCrawl] = useState(false);
+  const [crawlStatusMessage, setCrawlStatusMessage] = useState<{ text: string; isError: boolean; isSuccess: boolean } | null>(null);
+
+  // Crawler triggers
+  const [triggeringCrawler, setTriggeringCrawler] = useState<string | null>(null);
+
   // Terminal log state
   const [terminalLogs, setTerminalLogs] = useState<Array<{ time: string; type: string; message: string; action?: string }>>([
-    { time: '03:00:02', type: 'CRAWLER', message: 'Scanning Greenhouse company lists...', action: '[OK]' },
-    { time: '03:00:05', type: 'CRAWLER', message: 'Scraping company career page: Vercel...', action: '[OK]' },
-    { time: '03:00:06', type: 'WORKER', message: '2 new postings identified. Diff comparison initiated.' },
-    { time: '03:00:09', type: 'AI_MATCH', message: 'Matching user profile against "Senior Systems Engineer"...' },
-    { time: '03:00:11', type: 'AI_MATCH', message: 'Score generated: 95%. Match reasons stored in relational database.' },
-    { time: '03:00:12', type: 'NOTIFY', message: 'Notification dispatched via SMTP. Delivery confirmation received.' }
+    { time: '08:30:01', type: 'SYSTEM', message: 'JobRadar Command Center initializing...', action: '[OK]' },
+    { time: '08:30:03', type: 'SYSTEM', message: 'Listening for discovery queue notifications on channel company-discovery.' },
+    { time: '08:30:05', type: 'SCHEDULER', message: 'Cron loaded for YC, Product Hunt, Wellfound. Trigger scheduled for 9:00 AM daily.' },
   ]);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-  React.useEffect(() => {
+  // Fetch resume
+  useEffect(() => {
     const fetchResume = async () => {
       try {
         const res = await fetch(`${API_URL}/resume`, {
@@ -112,6 +90,187 @@ export default function DashboardClient({ user }: DashboardClientProps) {
     };
     fetchResume();
   }, [API_URL]);
+
+  // Fetch company stats
+  const fetchStats = async () => {
+    setLoadingStats(true);
+    try {
+      const res = await fetch(`${API_URL}/companies/stats`, {
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setStats(data);
+      }
+    } catch (err) {
+      console.error('Error fetching stats:', err);
+    } finally {
+      setLoadingStats(false);
+    }
+  };
+
+  // Fetch companies list
+  const fetchCompanies = async (page = 1) => {
+    setLoadingCompanies(true);
+    try {
+      const query = new URLSearchParams({
+        page: page.toString(),
+        limit: '15',
+        search: companySearch,
+        source: companySourceFilter,
+        status: companyStatusFilter,
+      });
+
+      const res = await fetch(`${API_URL}/companies?${query.toString()}`, {
+        credentials: 'include',
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setCompanies(data.items || []);
+        setPagination(data.pagination || { page: 1, limit: 15, total: 0, pages: 1 });
+        setCurrentPage(page);
+      }
+    } catch (err) {
+      console.error('Error fetching companies:', err);
+    } finally {
+      setLoadingCompanies(false);
+    }
+  };
+
+  // Trigger initial fetch and filter changes
+  useEffect(() => {
+    fetchStats();
+  }, [API_URL]);
+
+  useEffect(() => {
+    fetchCompanies(1);
+  }, [API_URL, companySearch, companySourceFilter, companyStatusFilter]);
+
+  // Handle manual URL crawling submit
+  const handleCrawlSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!crawlUrlInput.trim()) return;
+
+    setSubmittingCrawl(true);
+    setCrawlStatusMessage(null);
+
+    const now = new Date().toTimeString().split(' ')[0];
+    setTerminalLogs(prev => [
+      ...prev,
+      { time: now, type: 'OPERATOR', message: `Initializing manual crawl portal for URL: "${crawlUrlInput}"...` }
+    ]);
+
+    try {
+      const res = await fetch(`${API_URL}/companies/crawl`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ url: crawlUrlInput }),
+        credentials: 'include',
+      });
+
+      const data = await res.json();
+      const actionTime = new Date().toTimeString().split(' ')[0];
+
+      if (res.status === 200) {
+        setCrawlStatusMessage({ text: data.message, isError: false, isSuccess: true });
+        setCrawlUrlInput('');
+        
+        setTerminalLogs(prev => [
+          ...prev,
+          { time: actionTime, type: 'VALIDATOR', message: `Crawled site name: "${data.company.name}". Normalized Domain: ${data.company.normalizedDomain}.`, action: '[OK]' }
+        ]);
+
+        // Refresh list and stats
+        fetchStats();
+        fetchCompanies(1);
+      } else if (res.status === 409) {
+        // Duplicate
+        setCrawlStatusMessage({ text: data.message, isError: true, isSuccess: false });
+        setTerminalLogs(prev => [
+          ...prev,
+          { time: actionTime, type: 'DEDUPLICATOR', message: `Domain "${data.company.normalizedDomain}" already exists. Crawl skipped.`, action: '[SKIP]' }
+        ]);
+      } else if (res.status === 422) {
+        // Validation failed
+        setCrawlStatusMessage({ text: data.message, isError: true, isSuccess: false });
+        setTerminalLogs(prev => [
+          ...prev,
+          { time: actionTime, type: 'VALIDATOR', message: `Domain validation failed for website: "${data.company.website}". Added as REJECTED.`, action: '[REJECT]' }
+        ]);
+        fetchStats();
+        fetchCompanies(1);
+      } else {
+        throw new Error(data.message || 'Crawl request failed.');
+      }
+    } catch (err: any) {
+      console.error('Manual crawl error:', err);
+      setCrawlStatusMessage({ text: err.message || 'Failed to crawl URL.', isError: true, isSuccess: false });
+      const failTime = new Date().toTimeString().split(' ')[0];
+      setTerminalLogs(prev => [
+        ...prev,
+        { time: failTime, type: 'OPERATOR', message: `Manual URL crawl failed: ${err.message || 'Unknown network error'}.`, action: '[FAIL]' }
+      ]);
+    } finally {
+      setSubmittingCrawl(false);
+    }
+  };
+
+  // Handle trigger background discovery runs
+  const handleTriggerDiscovery = async (source?: 'YC' | 'PRODUCT_HUNT' | 'WELLFOUND') => {
+    const targetSource = source || 'ALL';
+    setTriggeringCrawler(targetSource);
+
+    const now = new Date().toTimeString().split(' ')[0];
+    setTerminalLogs(prev => [
+      ...prev,
+      { time: now, type: 'OPERATOR', message: `Manual trigger command issued: DISCOVER_${targetSource}...` }
+    ]);
+
+    try {
+      const res = await fetch(`${API_URL}/discover`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(source ? { source } : {}),
+        credentials: 'include',
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.message || 'Discovery command rejected by queue controller.');
+      }
+
+      const data = await res.json();
+      const completeTime = new Date().toTimeString().split(' ')[0];
+
+      setTerminalLogs(prev => [
+        ...prev,
+        { 
+          time: completeTime, 
+          type: 'DISCOVERY', 
+          message: `Run complete. Found: ${data.companiesFound}, Added: ${data.companiesAdded}, Duplicates: ${data.duplicates}, Failures: ${data.failures}`,
+          action: '[OK]' 
+        }
+      ]);
+
+      // Refresh data
+      fetchStats();
+      fetchCompanies(1);
+    } catch (err: any) {
+      console.error('Trigger discovery error:', err);
+      const failTime = new Date().toTimeString().split(' ')[0];
+      setTerminalLogs(prev => [
+        ...prev,
+        { time: failTime, type: 'DISCOVERY', message: `Command failed: ${err.message || 'Unknown error'}.`, action: '[FAIL]' }
+      ]);
+    } finally {
+      setTriggeringCrawler(null);
+    }
+  };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -182,16 +341,10 @@ export default function DashboardClient({ user }: DashboardClientProps) {
     }
   };
 
-  const filteredJobs = mockJobs.filter(job => 
-    job.title.toLowerCase().includes(filterText.toLowerCase()) ||
-    job.company.toLowerCase().includes(filterText.toLowerCase()) ||
-    job.tags.some(tag => tag.toLowerCase().includes(filterText.toLowerCase()))
-  );
-
   return (
     <div className="flex h-screen w-screen bg-canvas overflow-hidden">
       {/* Sidebar Panel */}
-      <aside className="w-[260px] min-w-[260px] bg-surface border-r border-border-subtle flex flex-col p-4">
+      <aside className="w-[260px] min-w-[260px] bg-surface border-r border-border-subtle flex flex-col p-4 overflow-y-auto">
         <div className="font-mono text-sm font-semibold tracking-wider flex items-center gap-2 pb-4 border-b border-border-subtle text-ink-primary">
           <TerminalIcon size={16} className="text-accent-system" />
           <span>JOBRADAR // CMD_CTR</span>
@@ -259,27 +412,45 @@ export default function DashboardClient({ user }: DashboardClientProps) {
 
         {/* Navigation / Monitors */}
         <div className="py-4 border-b border-border-subtle">
-          <div className="font-mono text-[10px] tracking-widest text-ink-secondary mb-3">ACTIVE CRAWLERS</div>
+          <div className="font-mono text-[10px] tracking-widest text-ink-secondary mb-3">DISCOVERY CRAWLERS</div>
           <div className="flex justify-between items-center mb-2 font-mono text-[11px]">
-            <div className="flex items-center gap-1.5 text-ink-primary">
-              <Cpu size={12} />
-              <span>Greenhouse</span>
-            </div>
-            <div className="text-[9px] py-0.5 px-1.5 rounded-[3px] font-bold bg-accent-match/10 text-accent-match border border-accent-match/20">OK</div>
+            <span className="text-ink-primary flex items-center gap-1"><Cpu size={11} /> YC Directory</span>
+            <button 
+              onClick={() => handleTriggerDiscovery('YC')}
+              disabled={triggeringCrawler !== null}
+              className="text-[9px] py-0.5 px-1.5 border border-border-subtle rounded-[3px] bg-canvas text-ink-secondary hover:text-ink-primary hover:border-ink-secondary"
+            >
+              {triggeringCrawler === 'YC' ? 'RUNNING...' : 'TRIGGER'}
+            </button>
           </div>
           <div className="flex justify-between items-center mb-2 font-mono text-[11px]">
-            <div className="flex items-center gap-1.5 text-ink-primary">
-              <Cpu size={12} />
-              <span>Lever</span>
-            </div>
-            <div className="text-[9px] py-0.5 px-1.5 rounded-[3px] font-bold bg-accent-match/10 text-accent-match border border-accent-match/20">OK</div>
+            <span className="text-ink-primary flex items-center gap-1"><Cpu size={11} /> Product Hunt</span>
+            <button 
+              onClick={() => handleTriggerDiscovery('PRODUCT_HUNT')}
+              disabled={triggeringCrawler !== null}
+              className="text-[9px] py-0.5 px-1.5 border border-border-subtle rounded-[3px] bg-canvas text-ink-secondary hover:text-ink-primary hover:border-ink-secondary"
+            >
+              {triggeringCrawler === 'PRODUCT_HUNT' ? 'RUNNING...' : 'TRIGGER'}
+            </button>
           </div>
           <div className="flex justify-between items-center mb-2 font-mono text-[11px]">
-            <div className="flex items-center gap-1.5 text-ink-primary">
-              <Cpu size={12} />
-              <span>Ashby</span>
-            </div>
-            <div className="text-[9px] py-0.5 px-1.5 rounded-[3px] font-bold bg-accent-system/10 text-accent-system border border-accent-system/20">SYNC</div>
+            <span className="text-ink-primary flex items-center gap-1"><Cpu size={11} /> Wellfound</span>
+            <button 
+              onClick={() => handleTriggerDiscovery('WELLFOUND')}
+              disabled={triggeringCrawler !== null}
+              className="text-[9px] py-0.5 px-1.5 border border-border-subtle rounded-[3px] bg-canvas text-ink-secondary hover:text-ink-primary hover:border-ink-secondary"
+            >
+              {triggeringCrawler === 'WELLFOUND' ? 'RUNNING...' : 'TRIGGER'}
+            </button>
+          </div>
+          <div className="mt-3">
+            <button 
+              onClick={() => handleTriggerDiscovery()}
+              disabled={triggeringCrawler !== null}
+              className="w-full py-1.5 border border-dashed border-accent-system/35 rounded-[4px] font-mono text-[10px] text-accent-system bg-accent-system/5 hover:bg-accent-system/10 hover:text-ink-primary transition-all duration-150"
+            >
+              {triggeringCrawler === 'ALL' ? 'RUNNING GLOBAL RUN...' : '⚡ CRAWL ALL SOURCES'}
+            </button>
           </div>
         </div>
 
@@ -290,30 +461,40 @@ export default function DashboardClient({ user }: DashboardClientProps) {
               <Activity size={12} />
               <span>DB Connection</span>
             </div>
-            <div className="text-[9px] py-0.5 px-1.5 rounded-[3px] font-bold bg-accent-match/10 text-accent-match border border-accent-match/20">1.2ms</div>
+            <div className="text-[9px] py-0.5 px-1.5 rounded-[3px] font-bold bg-accent-match/10 text-accent-match border border-accent-match/20">ACTIVE</div>
           </div>
           <div className="flex justify-between items-center mb-2 font-mono text-[11px]">
             <div className="flex items-center gap-1.5 text-ink-primary">
               <Shield size={12} />
-              <span>Auth Session</span>
+              <span>Queue Host (Redis)</span>
             </div>
-            <div className="text-[9px] py-0.5 px-1.5 rounded-[3px] font-bold bg-accent-match/10 text-accent-match border border-accent-match/20">ACTIVE</div>
+            <div className="text-[9px] py-0.5 px-1.5 rounded-[3px] font-bold bg-accent-match/10 text-accent-match border border-accent-match/20">ONLINE</div>
           </div>
         </div>
 
+        {/* Live stats sidebar block */}
         <div className="py-4 border-b border-border-subtle">
-          <div className="font-mono text-[10px] tracking-widest text-ink-secondary mb-3">METRICS</div>
-          <div className="flex justify-between mb-1.5 font-mono text-[11px]">
-            <span className="text-ink-secondary">JOBS_CRAWLED:</span>
-            <span className="text-ink-primary">1,248</span>
+          <div className="flex justify-between items-center mb-3">
+            <span className="font-mono text-[10px] tracking-widest text-ink-secondary">LIVE STATS</span>
+            <button onClick={fetchStats} className="text-ink-secondary hover:text-ink-primary">
+              <RefreshCw size={10} className={loadingStats ? 'animate-spin' : ''} />
+            </button>
           </div>
           <div className="flex justify-between mb-1.5 font-mono text-[11px]">
-            <span className="text-ink-secondary">MATCHES_GEN:</span>
-            <span className="text-ink-primary">342</span>
+            <span className="text-ink-secondary">COMPANIES_TOTAL:</span>
+            <span className="text-ink-primary font-bold">{stats.total}</span>
           </div>
           <div className="flex justify-between mb-1.5 font-mono text-[11px]">
-            <span className="text-ink-secondary">COMPANIES:</span>
-            <span className="text-ink-primary">42</span>
+            <span className="text-ink-secondary">VALIDATED:</span>
+            <span className="text-accent-match font-bold">{stats.validated}</span>
+          </div>
+          <div className="flex justify-between mb-1.5 font-mono text-[11px]">
+            <span className="text-ink-secondary">REJECTED_DEAD:</span>
+            <span className="text-accent-warn font-bold">{stats.rejected}</span>
+          </div>
+          <div className="flex justify-between mb-1.5 font-mono text-[11px]">
+            <span className="text-ink-secondary">DISCOVER_RUNS:</span>
+            <span className="text-ink-primary">{stats.runsCount}</span>
           </div>
         </div>
 
@@ -336,114 +517,230 @@ export default function DashboardClient({ user }: DashboardClientProps) {
         <header className="flex justify-between items-center py-4 px-6 border-b border-border-subtle bg-surface">
           <div className="flex flex-col">
             <h1 className="text-base font-bold text-ink-primary">JOBRADAR // CENTRAL_COMMAND</h1>
-            <p className="text-xs text-ink-secondary mt-0.5">AI-categorized high-fidelity opportunities and semantic matches</p>
+            <p className="text-xs text-ink-secondary mt-0.5">AI-categorized high-fidelity opportunities and company discovery databases</p>
           </div>
           
           <div className="flex items-center gap-3">
-            <div className="relative flex items-center">
-              <Search size={14} className="absolute left-2.5 text-ink-secondary" />
-              <input 
-                type="text" 
-                placeholder="Query jobs, stacks or keywords..."
-                value={filterText}
-                onChange={(e) => setFilterText(e.target.value)}
-                className="bg-canvas border border-border-subtle rounded-[6px] py-1.5 pr-3 pl-8 text-xs text-ink-primary w-[240px] focus:outline-none focus:border-accent-system focus:w-[300px] transition-all duration-150"
-              />
+            <div className="flex border border-border-subtle bg-canvas rounded-[6px] p-0.5">
+              <button 
+                onClick={() => setActiveTab('companies')}
+                className={`flex items-center gap-1.5 px-3 py-1 font-mono text-xs rounded-[4px] transition-all duration-150 ${activeTab === 'companies' ? 'bg-surface-hover text-ink-primary font-bold' : 'text-ink-secondary hover:text-ink-primary'}`}
+              >
+                <Building size={12} />
+                <span>COMPANIES ({stats.total})</span>
+              </button>
+              <button 
+                onClick={() => setActiveTab('opportunities')}
+                className={`flex items-center gap-1.5 px-3 py-1 font-mono text-xs rounded-[4px] transition-all duration-150 ${activeTab === 'opportunities' ? 'bg-surface-hover text-ink-primary font-bold' : 'text-ink-secondary hover:text-ink-primary'}`}
+              >
+                <Briefcase size={12} />
+                <span>OPPORTUNITIES (0)</span>
+              </button>
             </div>
-            <button className="w-7 h-7 border border-border-subtle rounded-[6px] flex items-center justify-center text-ink-secondary bg-canvas hover:text-ink-primary hover:bg-surface-hover">
-              <Bell size={14} />
+            <button onClick={() => { fetchStats(); fetchCompanies(1); }} className="w-7 h-7 border border-border-subtle rounded-[6px] flex items-center justify-center text-ink-secondary bg-canvas hover:text-ink-primary hover:bg-surface-hover">
+              <RefreshCw size={12} />
             </button>
           </div>
         </header>
 
         {/* Scrollable Feed */}
         <div className="flex-1 flex flex-col py-5 px-6 overflow-y-auto">
-          <div className="flex justify-between items-center mb-4">
-            <div className="font-mono text-[11px] font-semibold text-ink-secondary flex items-center gap-2">
-              <Briefcase size={14} />
-              <span>SEMANTIC OPPORTUNITY FLOW ({filteredJobs.length} matches found)</span>
-            </div>
-            <div className="flex gap-2">
-              <span className="font-mono text-[10px] py-0.5 px-2 rounded-[4px] border border-border-subtle text-ink-primary border-ink-secondary bg-surface-hover cursor-pointer hover:bg-surface-hover">MATCHES_ALL</span>
-              <span className="font-mono text-[10px] py-0.5 px-2 rounded-[4px] border border-border-subtle text-ink-secondary bg-surface cursor-pointer hover:text-ink-primary hover:border-ink-secondary hover:bg-surface-hover">SCORE_80+</span>
-              <span className="font-mono text-[10px] py-0.5 px-2 rounded-[4px] border border-border-subtle text-ink-secondary bg-surface cursor-pointer hover:text-ink-primary hover:border-ink-secondary hover:bg-surface-hover">REMOTE_ONLY</span>
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-3 mb-6">
-            {filteredJobs.length > 0 ? (
-              filteredJobs.map((job) => {
-                // Determine matching color token
-                let matchColor = 'var(--color-accent-warn)';
-                let matchBg = 'rgba(245, 158, 11, 0.1)';
-                let matchBorder = 'rgba(245, 158, 11, 0.2)';
-                if (job.score >= 85) {
-                  matchColor = 'var(--color-accent-match)';
-                  matchBg = 'rgba(16, 185, 129, 0.1)';
-                  matchBorder = 'rgba(16, 185, 129, 0.2)';
-                } else if (job.score < 70) {
-                  matchColor = 'var(--color-ink-secondary)';
-                  matchBg = 'rgba(156, 163, 175, 0.1)';
-                  matchBorder = 'rgba(156, 163, 175, 0.2)';
-                }
-
-                return (
-                  <div key={job.id} className="bg-surface border border-border-subtle rounded-[6px] p-4 hover:border-ink-secondary transition-colors duration-150">
-                    {/* Job Card Header */}
-                    <div className="flex justify-between items-start mb-2.5">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-semibold text-ink-primary">{job.title}</span>
-                        <span className="text-border-subtle font-mono">//</span>
-                        <span className="font-medium text-ink-secondary">{job.company}</span>
-                        <span className="text-[11px] text-ink-secondary">({job.location})</span>
-                      </div>
-                      
-                      <div 
-                        className="font-mono text-[11px] font-bold py-0.5 px-2 rounded-[4px]" 
-                        style={{ 
-                          color: matchColor, 
-                          backgroundColor: matchBg,
-                          border: `1px solid ${matchBorder}`
-                        }}
-                      >
-                        {job.score}% Match
-                      </div>
-                    </div>
-
-                    {/* Tech tags */}
-                    <div className="flex gap-1.5 flex-wrap mb-3">
-                      {job.tags.map((tag, idx) => (
-                        <span key={idx} className="font-mono text-[10px] py-0.5 px-1.5 rounded-[4px] bg-canvas border border-border-subtle text-ink-secondary">{tag}</span>
-                      ))}
-                    </div>
-
-                    {/* AI Callout */}
-                    <div className="bg-canvas border-l-2 border-accent-system py-2.5 px-3 mb-3 rounded-r-[4px]">
-                      <div className="font-mono text-[9px] font-bold text-accent-system mb-1 tracking-wider">
-                        <span>AI ANALYTICS GAP EVALUATION</span>
-                      </div>
-                      <p className="text-xs leading-normal text-ink-primary">{job.reason}</p>
-                    </div>
-
-                    {/* Footer */}
-                    <div className="flex justify-between items-center font-mono text-[10px] text-ink-secondary border-t border-dashed border-border-subtle pt-3">
-                      <span>DETECTED: {job.postedAt}</span>
-                      <a href={job.url} className="flex items-center gap-1 text-accent-system hover:text-ink-primary hover:underline">
-                        <span>OPEN EXTERNAL PORT</span>
-                        <ExternalLink size={11} />
-                      </a>
-                    </div>
+          {activeTab === 'companies' ? (
+            /* COMPANIES TAB */
+            <div className="flex flex-col gap-4 flex-1">
+              
+              {/* Manual URL Ingestion Area */}
+              <div className="bg-surface border border-border-subtle rounded-[6px] p-4">
+                <div className="font-mono text-xs font-semibold text-ink-primary mb-2 flex items-center gap-1.5">
+                  <Plus size={14} className="text-accent-system" />
+                  <span>MANUAL COMPANY INGESTION PORTAL</span>
+                </div>
+                <form onSubmit={handleCrawlSubmit} className="flex gap-2.5">
+                  <input 
+                    type="text" 
+                    placeholder="Enter website url to crawl (e.g. supabase.com)..."
+                    value={crawlUrlInput}
+                    onChange={(e) => setCrawlUrlInput(e.target.value)}
+                    disabled={submittingCrawl}
+                    className="flex-1 bg-canvas border border-border-subtle rounded-[6px] px-3 py-1.5 text-xs text-ink-primary focus:outline-none focus:border-accent-system transition-colors"
+                  />
+                  <button 
+                    type="submit" 
+                    disabled={submittingCrawl || !crawlUrlInput.trim()}
+                    className="px-4 py-1.5 bg-canvas border border-border-subtle hover:border-accent-system text-ink-primary rounded-[6px] font-mono text-xs font-semibold hover:bg-surface-hover transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {submittingCrawl ? 'CRAWLING...' : 'INJECT & CRAWL'}
+                  </button>
+                </form>
+                {crawlStatusMessage && (
+                  <div className={`mt-2 font-mono text-[11px] flex items-center gap-1 ${crawlStatusMessage.isError ? 'text-accent-warn' : 'text-accent-match'}`}>
+                    {crawlStatusMessage.isError ? <AlertTriangle size={12} /> : <CheckCircle size={12} />}
+                    <span>{crawlStatusMessage.text}</span>
                   </div>
-                );
-              })
-            ) : (
-              <div className="p-12 border border-dashed border-border-subtle rounded-[6px] text-center text-ink-secondary flex flex-col items-center">
-                <TerminalIcon size={24} className="text-border-subtle mb-3" />
-                <p className="font-mono text-xs font-bold text-ink-primary mb-1">NO JOBS MATCHED CURRENT SEARCH QUERY</p>
-                <span className="text-[11px]">Adjust filters or input parameters to capture opportunity flows.</span>
+                )}
               </div>
-            )}
-          </div>
+
+              {/* Company Directory List & Filters */}
+              <div className="flex flex-col flex-1">
+                <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+                  {/* Filters */}
+                  <div className="flex gap-2 items-center flex-wrap">
+                    <div className="relative flex items-center">
+                      <Search size={12} className="absolute left-2.5 text-ink-secondary" />
+                      <input 
+                        type="text" 
+                        placeholder="Search directory..."
+                        value={companySearch}
+                        onChange={(e) => setCompanySearch(e.target.value)}
+                        className="bg-surface border border-border-subtle rounded-[6px] py-1 px-3 pl-8 text-xs text-ink-primary w-[180px] focus:outline-none focus:border-accent-system focus:w-[220px] transition-all"
+                      />
+                    </div>
+                    
+                    {/* Source selection */}
+                    <select
+                      value={companySourceFilter}
+                      onChange={(e) => setCompanySourceFilter(e.target.value)}
+                      className="bg-surface border border-border-subtle rounded-[6px] py-1 px-2.5 text-xs text-ink-primary focus:outline-none cursor-pointer"
+                    >
+                      <option value="">ALL SOURCES</option>
+                      <option value="YC">YC STARTUPS</option>
+                      <option value="PRODUCT_HUNT">PRODUCT HUNT</option>
+                      <option value="WELLFOUND">WELLFOUND</option>
+                      <option value="MANUAL">MANUAL ENTRIES</option>
+                    </select>
+
+                    {/* Status selection */}
+                    <select
+                      value={companyStatusFilter}
+                      onChange={(e) => setCompanyStatusFilter(e.target.value)}
+                      className="bg-surface border border-border-subtle rounded-[6px] py-1 px-2.5 text-xs text-ink-primary focus:outline-none cursor-pointer"
+                    >
+                      <option value="">ALL STATUSES</option>
+                      <option value="VALIDATED">VALIDATED (ACTIVE)</option>
+                      <option value="REJECTED">REJECTED (DEAD)</option>
+                    </select>
+                  </div>
+
+                  {/* Summary count */}
+                  <div className="font-mono text-[10px] text-ink-secondary">
+                    SHOWING {companies.length} OF {pagination.total} ENTRIES
+                  </div>
+                </div>
+
+                {/* Companies Table / Grid */}
+                <div className="flex-1 border border-border-subtle rounded-[6px] bg-surface overflow-hidden flex flex-col">
+                  {loadingCompanies ? (
+                    <div className="p-12 text-center text-ink-secondary font-mono text-xs flex-1 flex items-center justify-center">
+                      <span className="animate-pulse">QUERYING RELATIONAL DATABASE...</span>
+                    </div>
+                  ) : companies.length > 0 ? (
+                    <div className="flex-1 overflow-x-auto flex flex-col">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="border-b border-border-subtle bg-canvas/30 font-mono text-ink-secondary text-[11px]">
+                            <th className="p-3 font-semibold">COMPANY NAME</th>
+                            <th className="p-3 font-semibold">WEBSITE PORT</th>
+                            <th className="p-3 font-semibold">INDUSTRY</th>
+                            <th className="p-3 font-semibold">SOURCE</th>
+                            <th className="p-3 font-semibold">STATUS</th>
+                            <th className="p-3 font-semibold">DATE ADDED</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border-subtle">
+                          {companies.map((company) => (
+                            <tr key={company.id} className="hover:bg-bg-hover transition-colors">
+                              <td className="p-3 font-semibold text-ink-primary">{company.name}</td>
+                              <td className="p-3 font-mono text-accent-system">
+                                <a href={company.website} target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
+                                  <span>{company.normalizedDomain}</span>
+                                  <ExternalLink size={10} />
+                                </a>
+                              </td>
+                              <td className="p-3 text-ink-secondary truncate max-w-[200px]" title={company.industry}>
+                                {company.industry || '—'}
+                              </td>
+                              <td className="p-3 font-mono">
+                                <span className={`px-1.5 py-0.5 rounded-[3px] text-[10px] font-bold ${
+                                  company.source === 'YC' ? 'bg-orange-500/10 text-orange-400 border border-orange-500/20' :
+                                  company.source === 'PRODUCT_HUNT' ? 'bg-red-500/10 text-red-400 border border-red-500/20' :
+                                  company.source === 'WELLFOUND' ? 'bg-green-500/10 text-green-400 border border-green-500/20' :
+                                  'bg-accent-system/10 text-indigo-400 border border-accent-system/20'
+                                }`}>
+                                  {company.source}
+                                </span>
+                              </td>
+                              <td className="p-3 font-mono">
+                                {company.status === 'VALIDATED' ? (
+                                  <span className="flex items-center gap-1 text-accent-match">
+                                    <CheckCircle size={10} />
+                                    <span>VALID</span>
+                                  </span>
+                                ) : (
+                                  <span className="flex items-center gap-1 text-accent-warn" title="Failed http/dns availability checks">
+                                    <XCircle size={10} />
+                                    <span>REJECTED</span>
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-3 text-ink-secondary font-mono text-[11px]">
+                                {new Date(company.createdAt).toLocaleDateString()}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+
+                      {/* Pagination Controls */}
+                      {pagination.pages > 1 && (
+                        <div className="mt-auto border-t border-border-subtle p-3 flex justify-between items-center bg-canvas/20">
+                          <button
+                            onClick={() => fetchCompanies(currentPage - 1)}
+                            disabled={currentPage === 1}
+                            className="px-2.5 py-1 border border-border-subtle rounded-[4px] font-mono text-[11px] text-ink-secondary hover:text-ink-primary hover:border-ink-secondary bg-surface cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            [PREV_PORT]
+                          </button>
+                          <span className="font-mono text-xs text-ink-secondary">
+                            SECTOR {currentPage} / {pagination.pages}
+                          </span>
+                          <button
+                            onClick={() => fetchCompanies(currentPage + 1)}
+                            disabled={currentPage === pagination.pages}
+                            className="px-2.5 py-1 border border-border-subtle rounded-[4px] font-mono text-[11px] text-ink-secondary hover:text-ink-primary hover:border-ink-secondary bg-surface cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            [NEXT_PORT]
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="p-12 text-center text-ink-secondary font-mono text-xs flex-1 flex flex-col items-center justify-center">
+                      <FolderOpen size={24} className="mb-2 text-border-subtle" />
+                      <span>NO COMPANIES DISCOVERED CORRESPONDING TO THE SPECIFIED CRITERIA.</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+            </div>
+          ) : (
+            /* OPPORTUNITIES TAB (EMPTY PLACEHOLDER FOR PHASE 2) */
+            <div className="flex flex-col gap-3 mb-6">
+              <div className="p-12 border border-dashed border-border-subtle rounded-[6px] text-center text-ink-secondary flex flex-col items-center justify-center">
+                <Briefcase size={24} className="text-border-subtle mb-3" />
+                <p className="font-mono text-xs font-bold text-ink-primary mb-1">NO OPPORTUNITIES SURFACED YET</p>
+                <span className="text-[11px] max-w-md mb-4">
+                  Job Extraction & Crawler mechanisms are disabled for Phase 2. Startups database is active, and once crawler scripts are initiated in Phase 3, matching jobs will appear here.
+                </span>
+                <button 
+                  onClick={() => setActiveTab('companies')}
+                  className="px-3 py-1.5 border border-border-subtle hover:border-accent-system bg-surface hover:bg-surface-hover rounded-[6px] font-mono text-[11px] text-ink-primary"
+                >
+                  GOTO COMPANY DIRECTORY
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Systems Monitor Log Stream at bottom */}
@@ -455,7 +752,7 @@ export default function DashboardClient({ user }: DashboardClientProps) {
           <div className="flex-1 overflow-y-auto flex flex-col gap-1 text-ink-secondary text-mono">
             {terminalLogs.map((log, idx) => (
               <div key={idx}>
-                <span className="text-ink-secondary">[{log.time}]</span> {log.type} -&gt; {log.message} {log.action && <span className="text-accent-system">{log.action}</span>}
+                <span className="text-ink-secondary">[{log.time}]</span> {log.type} &gt; {log.message} {log.action && <span className="text-accent-system">{log.action}</span>}
               </div>
             ))}
           </div>

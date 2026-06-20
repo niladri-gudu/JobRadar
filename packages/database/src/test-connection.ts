@@ -8,6 +8,7 @@ async function test() {
     data: {
       name: 'Acme Corp',
       website: 'https://acme.example.com',
+      normalizedDomain: 'acme.example.com',
       industry: 'Technology',
       source: 'manual',
     },

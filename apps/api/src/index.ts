@@ -7,6 +7,8 @@ import fs from 'fs';
 import { config } from './config';
 import { authRoutes } from './modules/auth/auth.routes';
 import { resumeRoutes } from './modules/resume/resume.routes';
+import { discoverRoutes } from './modules/discover/discover.routes';
+import { companyRoutes } from './modules/company/company.routes';
 
 const fastify = Fastify({
   logger: true,
@@ -53,6 +55,8 @@ fastify.get('/health', async () => {
 // Register modular routes
 fastify.register(authRoutes);
 fastify.register(resumeRoutes);
+fastify.register(discoverRoutes);
+fastify.register(companyRoutes);
 
 const start = async () => {
   try {
