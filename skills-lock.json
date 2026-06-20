@@ -25,6 +25,12 @@
       "skillPath": "skills/remote-browser/SKILL.md",
       "computedHash": "bc43d88a7cd3f130d4edb6f8da4d6f5f2724e45545226ae116fa52a9aa2e6b37"
     },
+    "responsive-design": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "skillPath": "plugins/ui-design/skills/responsive-design/SKILL.md",
+      "computedHash": "155eff4b1bc8d867ae6bea9900c485ab1081de0b4873c1900adb66bf62466aed"
+    },
     "shadcn": {
       "source": "shadcn/ui",
       "sourceType": "github",

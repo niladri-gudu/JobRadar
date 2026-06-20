@@ -11,6 +11,9 @@ export async function handleGetJobs(
       search?: string;
       remoteOnly?: string;
       minScore?: string;
+      location?: string;
+      companyName?: string;
+      seniority?: string;
     };
   }>,
   reply: FastifyReply
@@ -21,6 +24,9 @@ export async function handleGetJobs(
     const search = request.query.search;
     const remoteOnly = request.query.remoteOnly === 'true';
     const minScore = request.query.minScore ? parseInt(request.query.minScore, 10) : undefined;
+    const location = request.query.location;
+    const companyName = request.query.companyName;
+    const seniority = request.query.seniority;
 
     // Get user session to retrieve parsed resume
     const session = await auth.api.getSession({
@@ -34,6 +40,9 @@ export async function handleGetJobs(
       search,
       remoteOnly,
       minScore,
+      location,
+      companyName,
+      seniority,
       userId,
     });
 

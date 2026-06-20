@@ -1,9 +1,23 @@
 import { FastifyRequest, FastifyReply } from 'fastify';
-import { runDiscovery } from './discover.service';
+import { runDiscovery, DiscoverySourceType } from './discover.service';
 
 interface DiscoverRequestBody {
-  source?: 'YC' | 'PRODUCT_HUNT' | 'WELLFOUND';
+  source?: DiscoverySourceType;
 }
+
+const SUPPORTED_SOURCES = [
+  'YC',
+  'PRODUCT_HUNT',
+  'WELLFOUND',
+  'REMOTE_CO',
+  'REMOTE_OK',
+  'WE_WORK_REMOTELY',
+  'CUTSHORT',
+  'FOUNDIT',
+  'LINKEDIN',
+  'NAUKRI',
+  'INDEED'
+];
 
 export async function handleDiscover(
   request: FastifyRequest<{ Body: DiscoverRequestBody }>,
@@ -12,9 +26,9 @@ export async function handleDiscover(
   try {
     const { source } = request.body || {};
 
-    if (source && !['YC', 'PRODUCT_HUNT', 'WELLFOUND'].includes(source)) {
+    if (source && !SUPPORTED_SOURCES.includes(source)) {
       return reply.status(400).send({
-        error: 'Invalid source. Supported sources: YC, PRODUCT_HUNT, WELLFOUND',
+        error: `Invalid source. Supported sources: ${SUPPORTED_SOURCES.join(', ')}`,
       });
     }
 

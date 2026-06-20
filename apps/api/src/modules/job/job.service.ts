@@ -7,6 +7,9 @@ export interface GetJobsParams {
   remoteOnly?: boolean;
   minScore?: number;
   userId?: string;
+  location?: string;
+  companyName?: string;
+  seniority?: string;
 }
 
 const DEFAULT_SKILLS = [
@@ -323,6 +326,36 @@ export async function getJobs(params: GetJobsParams) {
       (job.description && job.description.toLowerCase().includes(searchLower)) ||
       job.company.name.toLowerCase().includes(searchLower)
     );
+  }
+
+  // Apply Location filter in-memory
+  if (params.location) {
+    const locLower = params.location.toLowerCase();
+    filteredJobs = filteredJobs.filter(job => 
+      job.location && job.location.toLowerCase().includes(locLower)
+    );
+  }
+
+  // Apply Company name filter in-memory
+  if (params.companyName) {
+    const compLower = params.companyName.toLowerCase();
+    filteredJobs = filteredJobs.filter(job => 
+      job.company.name.toLowerCase().includes(compLower)
+    );
+  }
+
+  // Apply Seniority filter in-memory
+  if (params.seniority && params.seniority !== 'all') {
+    filteredJobs = filteredJobs.filter(job => {
+      const title = job.title.toLowerCase();
+      const isSenior = title.includes('senior') || title.includes('sr') || title.includes('staff') || title.includes('principal') || title.includes('lead') || title.includes('director') || title.includes('manager') || title.includes('head') || title.includes('architect');
+      if (params.seniority === 'senior') {
+        return isSenior;
+      } else if (params.seniority === 'entry') {
+        return !isSenior;
+      }
+      return true;
+    });
   }
 
   // Apply Remote only filter in-memory

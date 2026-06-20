@@ -28,7 +28,9 @@ export interface DiscoveryMetrics {
 /**
  * Triggers a discovery job for a single source on the queue and awaits its results.
  */
-export async function runSourceDiscovery(source: 'YC' | 'PRODUCT_HUNT' | 'WELLFOUND'): Promise<DiscoveryMetrics> {
+export type DiscoverySourceType = 'YC' | 'PRODUCT_HUNT' | 'WELLFOUND' | 'REMOTE_CO' | 'REMOTE_OK' | 'WE_WORK_REMOTELY' | 'CUTSHORT' | 'FOUNDIT' | 'LINKEDIN' | 'NAUKRI' | 'INDEED';
+
+export async function runSourceDiscovery(source: DiscoverySourceType): Promise<DiscoveryMetrics> {
   console.log(`[API Service] Adding job to queue for: ${source}`);
   
   const job = await discoveryQueue.add(
@@ -61,14 +63,16 @@ export async function runSourceDiscovery(source: 'YC' | 'PRODUCT_HUNT' | 'WELLFO
 /**
  * Runs discovery across specified sources (or all if empty) and aggregates results.
  */
-export async function runDiscovery(source?: 'YC' | 'PRODUCT_HUNT' | 'WELLFOUND'): Promise<{
+export async function runDiscovery(source?: DiscoverySourceType): Promise<{
   companiesFound: number;
   companiesAdded: number;
   duplicates: number;
   failures: number;
   runs: DiscoveryMetrics[];
 }> {
-  const sourcesToRun = source ? [source] : (['YC', 'PRODUCT_HUNT', 'WELLFOUND'] as const);
+  const sourcesToRun = source 
+    ? [source] 
+    : (['YC', 'PRODUCT_HUNT', 'WELLFOUND', 'REMOTE_CO', 'REMOTE_OK', 'WE_WORK_REMOTELY', 'CUTSHORT', 'FOUNDIT', 'LINKEDIN', 'NAUKRI', 'INDEED'] as const);
   
   console.log(`[API Service] Starting discovery run for: ${sourcesToRun.join(', ')}`);
 

@@ -334,8 +334,14 @@ async function scrapeGeneralJobs(url: string, html: string): Promise<CrawledJob[
         const textLower = text.toLowerCase();
         const hrefLower = href.toLowerCase();
         
-        // Match standard developer title keywords to see if link text represents a job posting
-        const isJobLink = ['engineer', 'developer', 'designer', 'manager', 'lead', 'fresher', 'intern', 'analyst', 'architect', 'writer', 'support', 'ops', 'marketing'].some(k => 
+        // Match standard developer and Indian tech job title keywords to see if link text represents a job posting
+        const isJobLink = [
+          'engineer', 'developer', 'designer', 'manager', 'lead', 'fresher', 'intern', 
+          'analyst', 'architect', 'writer', 'support', 'ops', 'marketing', 'trainee', 
+          'specialist', 'consultant', 'programmer', 'mts', 'associate', 'technical', 
+          'software', 'web', 'stack', 'qa', 'test', 'frontend', 'backend', 'fullstack', 
+          'cloud', 'data', 'ml', 'ai', 'member'
+        ].some(k => 
           textLower.includes(k)
         );
         
@@ -380,7 +386,10 @@ async function scrapeGeneralJobs(url: string, html: string): Promise<CrawledJob[
  * - "Backend Engineer, Remote, 0-2 Years" -> Score: 95
  * - "Principal Platform Engineer, USA" -> Score: 5
  */
-export function calculateRelevanceScore(job: { title: string; location?: string; description?: string }): number {
+export function calculateRelevanceScore(
+  job: { title: string; location?: string; description?: string },
+  companyContext?: { source?: string; normalizedDomain?: string }
+): number {
   let score = 35; // base score
 
   const title = (job.title || '').toLowerCase();
@@ -389,8 +398,34 @@ export function calculateRelevanceScore(job: { title: string; location?: string;
 
   // Positive Keywords
   const isRemote = title.includes('remote') || location.includes('remote') || desc.includes('remote work') || desc.includes('work from home') || desc.includes('work-from-home') || location.includes('anywhere');
-  const isIndia = location.includes('india') || location.includes('bangalore') || location.includes('bengaluru') || location.includes('pune') || location.includes('mumbai') || location.includes('delhi') || location.includes('hyderabad') || location.includes('chennai') || location.includes('noida') || location.includes('gurgaon') || location.includes('in') || location.includes('ind');
-  const isEntryLevel = title.includes('junior') || title.includes('jr') || title.includes('associate') || title.includes('intern') || title.includes('graduate') || title.includes('grad') || title.includes('fresher') || title.includes('entry level') || title.includes('entry-level') || desc.includes('0-2 years') || desc.includes('0-3 years') || desc.includes('no experience') || desc.includes('new grad');
+  
+  // Detect if company belongs to India context
+  const isIndianCompany = companyContext && (
+    companyContext.source === 'CUTSHORT' || 
+    companyContext.source === 'FOUNDIT' || 
+    companyContext.source === 'NAUKRI' || 
+    companyContext.normalizedDomain?.endsWith('.in')
+  );
+
+  const isIndia = 
+    location.includes('india') || 
+    location.includes('bangalore') || 
+    location.includes('bengaluru') || 
+    location.includes('pune') || 
+    location.includes('mumbai') || 
+    location.includes('delhi') || 
+    location.includes('hyderabad') || 
+    location.includes('chennai') || 
+    location.includes('noida') || 
+    location.includes('gurgaon') || 
+    location.includes('in') || 
+    location.includes('ind') ||
+    !!isIndianCompany ||
+    // If the description contains clear Indian cities and it doesn't explicitly name USA/UK
+    ((desc.includes('bangalore') || desc.includes('bengaluru') || desc.includes('pune') || desc.includes('mumbai') || desc.includes('hyderabad') || desc.includes('noida') || desc.includes('gurgaon') || desc.includes('delhi') || desc.includes('india')) &&
+     !location.includes('usa') && !location.includes('united states') && !location.includes('uk') && !location.includes('london'));
+
+  const isEntryLevel = title.includes('junior') || title.includes('jr') || title.includes('associate') || title.includes('intern') || title.includes('graduate') || title.includes('grad') || title.includes('fresher') || title.includes('entry level') || title.includes('entry-level') || desc.includes('0-2 years') || desc.includes('0-3 years') || desc.includes('no experience') || desc.includes('new grad') || title.includes('trainee');
   const isBackendWeb3 = title.includes('backend') || title.includes('software engineer') || title.includes('software developer') || title.includes('node') || title.includes('typescript') || title.includes('javascript') || title.includes('golang') || title.includes('go') || title.includes('rust') || title.includes('solidity') || title.includes('web3') || title.includes('blockchain') || title.includes('smart contract') || title.includes('full stack') || title.includes('fullstack') || title.includes('engineer');
 
   if (isRemote) score += 20;
@@ -507,9 +542,44 @@ export async function runCareerIntelligence(companyId: string): Promise<Discover
       where: { companyId: company.id },
     });
 
+    const isIndianCompany = 
+      company.source === 'CUTSHORT' || 
+      company.source === 'FOUNDIT' || 
+      company.source === 'NAUKRI' || 
+      company.normalizedDomain.endsWith('.in');
+
     for (const job of jobs) {
       // Step 5: Relevance scoring
-      const relevanceScore = calculateRelevanceScore(job);
+      const relevanceScore = calculateRelevanceScore(job, {
+        source: company.source,
+        normalizedDomain: company.normalizedDomain,
+      });
+
+      // Enrich job location for Indian companies
+      let jobLocation = job.location || 'Remote';
+      if (isIndianCompany) {
+        const jobLocLower = jobLocation.toLowerCase();
+        const hasIndiaClues = jobLocLower.includes('india') || 
+                              jobLocLower.includes('bangalore') || 
+                              jobLocLower.includes('bengaluru') || 
+                              jobLocLower.includes('pune') || 
+                              jobLocLower.includes('mumbai') || 
+                              jobLocLower.includes('delhi') || 
+                              jobLocLower.includes('hyderabad') || 
+                              jobLocLower.includes('chennai') || 
+                              jobLocLower.includes('noida') || 
+                              jobLocLower.includes('gurgaon');
+        
+        if (!hasIndiaClues) {
+          if (jobLocation === 'Office') {
+            jobLocation = 'India (Office)';
+          } else if (jobLocation === 'Remote') {
+            jobLocation = 'India (Remote)';
+          } else {
+            jobLocation = `${jobLocation}, India`;
+          }
+        }
+      }
 
       // Create Job
       const createdJob = await db.job.create({
@@ -517,7 +587,7 @@ export async function runCareerIntelligence(companyId: string): Promise<Discover
           companyId: company.id,
           careerPageId: careerPage.id,
           title: job.title,
-          location: job.location || 'Remote',
+          location: jobLocation,
           applyUrl: job.applyUrl || careerPageUrl,
           description: job.description || '',
           externalJobId: job.externalJobId || null,

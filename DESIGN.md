@@ -38,6 +38,12 @@ Do not use arbitrary colors or default brand gradients. Only use the semantic va
 - **Component Padding:** `12px` or `16px` inner alignment.
 - **Card Radius:** Max `6px` (`rounded-md` in Tailwind).
 - **Structure Pattern:** A fixed split layout. A left side panel (`260px` fixed width) housing automated crawlers status, configurations, and system health controls. A main content field rendering a dense, scrollable job card bento block array or chronological feed.
+- **Spacing:** No whitespace, ever. Use borders to define sections.
+- **Responsive Behavior:** 
+    * Mobile: Hide the sidebar and make it a slide-out menu.
+    * Tablet: Same as mobile.
+    * Desktop: Fixed sidebar, main content.
+- **Use the responsive design skill that is present
 
 ## 5. Core Component Design Schemas
 

@@ -48,6 +48,94 @@ export async function setupScheduler() {
     );
     console.log('[Scheduler] Scheduled repeatable job: Discover Wellfound (9:00 AM daily)');
 
+    await discoveryQueue.add(
+      'discover-remoteco',
+      { source: DiscoverySource.REMOTE_CO },
+      {
+        repeat: {
+          pattern: '0 9 * * *',
+        },
+      }
+    );
+    console.log('[Scheduler] Scheduled repeatable job: Discover Remote.co (9:00 AM daily)');
+
+    await discoveryQueue.add(
+      'discover-remoteok',
+      { source: DiscoverySource.REMOTE_OK },
+      {
+        repeat: {
+          pattern: '0 9 * * *',
+        },
+      }
+    );
+    console.log('[Scheduler] Scheduled repeatable job: Discover RemoteOK (9:00 AM daily)');
+
+    await discoveryQueue.add(
+      'discover-weworkremotely',
+      { source: DiscoverySource.WE_WORK_REMOTELY },
+      {
+        repeat: {
+          pattern: '0 9 * * *',
+        },
+      }
+    );
+    console.log('[Scheduler] Scheduled repeatable job: Discover WeWorkRemotely (9:00 AM daily)');
+
+    await discoveryQueue.add(
+      'discover-cutshort',
+      { source: DiscoverySource.CUTSHORT },
+      {
+        repeat: {
+          pattern: '0 9 * * *',
+        },
+      }
+    );
+    console.log('[Scheduler] Scheduled repeatable job: Discover Cutshort (9:00 AM daily)');
+
+    await discoveryQueue.add(
+      'discover-foundit',
+      { source: DiscoverySource.FOUNDIT },
+      {
+        repeat: {
+          pattern: '0 9 * * *',
+        },
+      }
+    );
+    console.log('[Scheduler] Scheduled repeatable job: Discover Foundit (9:00 AM daily)');
+
+    await discoveryQueue.add(
+      'discover-linkedin',
+      { source: DiscoverySource.LINKEDIN },
+      {
+        repeat: {
+          pattern: '0 9 * * *',
+        },
+      }
+    );
+    console.log('[Scheduler] Scheduled repeatable job: Discover LinkedIn (9:00 AM daily)');
+
+    await discoveryQueue.add(
+      'discover-naukri',
+      { source: DiscoverySource.NAUKRI },
+      {
+        repeat: {
+          pattern: '0 9 * * *',
+        },
+      }
+    );
+    console.log('[Scheduler] Scheduled repeatable job: Discover Naukri (9:00 AM daily)');
+
+    await discoveryQueue.add(
+      'discover-indeed',
+      { source: DiscoverySource.INDEED },
+      {
+        repeat: {
+          pattern: '0 9 * * *',
+        },
+      }
+    );
+    console.log('[Scheduler] Scheduled repeatable job: Discover Indeed (9:00 AM daily)');
+
     // 3. Add repeatable job to refresh all existing company jobs daily at 10:00 AM
     await discoveryQueue.add(
       'refresh-all-jobs',

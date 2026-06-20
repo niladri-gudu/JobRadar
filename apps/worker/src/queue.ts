@@ -4,6 +4,14 @@ import { config } from './config';
 import { crawlYcCompanies } from './crawler/yc.crawler';
 import { crawlProductHuntCompanies } from './crawler/ph.crawler';
 import { crawlWellfoundCompanies } from './crawler/wf.crawler';
+import { crawlRemoteCoCompanies } from './crawler/remoteco.crawler';
+import { crawlRemoteOkCompanies } from './crawler/remoteok.crawler';
+import { crawlWeWorkRemotelyCompanies } from './crawler/weworkremotely.crawler';
+import { crawlCutshortCompanies } from './crawler/cutshort.crawler';
+import { crawlFounditCompanies } from './crawler/foundit.crawler';
+import { crawlLinkedinCompanies } from './crawler/linkedin.crawler';
+import { crawlNaukriCompanies } from './crawler/naukri.crawler';
+import { crawlIndeedCompanies } from './crawler/indeed.crawler';
 import { normalizeDomain, validateWebsite } from './crawler/validation.worker';
 import { runCareerIntelligence } from './crawler/discovery';
 
@@ -20,6 +28,14 @@ export enum DiscoverySource {
   YC = 'YC',
   PRODUCT_HUNT = 'PRODUCT_HUNT',
   WELLFOUND = 'WELLFOUND',
+  REMOTE_CO = 'REMOTE_CO',
+  REMOTE_OK = 'REMOTE_OK',
+  WE_WORK_REMOTELY = 'WE_WORK_REMOTELY',
+  CUTSHORT = 'CUTSHORT',
+  FOUNDIT = 'FOUNDIT',
+  LINKEDIN = 'LINKEDIN',
+  NAUKRI = 'NAUKRI',
+  INDEED = 'INDEED',
 }
 
 export interface DiscoveryJobPayload {
@@ -121,6 +137,30 @@ export const discoveryWorker = new Worker(
           break;
         case DiscoverySource.WELLFOUND:
           crawledCompanies = await crawlWellfoundCompanies();
+          break;
+        case DiscoverySource.REMOTE_CO:
+          crawledCompanies = await crawlRemoteCoCompanies();
+          break;
+        case DiscoverySource.REMOTE_OK:
+          crawledCompanies = await crawlRemoteOkCompanies();
+          break;
+        case DiscoverySource.WE_WORK_REMOTELY:
+          crawledCompanies = await crawlWeWorkRemotelyCompanies();
+          break;
+        case DiscoverySource.CUTSHORT:
+          crawledCompanies = await crawlCutshortCompanies();
+          break;
+        case DiscoverySource.FOUNDIT:
+          crawledCompanies = await crawlFounditCompanies();
+          break;
+        case DiscoverySource.LINKEDIN:
+          crawledCompanies = await crawlLinkedinCompanies();
+          break;
+        case DiscoverySource.NAUKRI:
+          crawledCompanies = await crawlNaukriCompanies();
+          break;
+        case DiscoverySource.INDEED:
+          crawledCompanies = await crawlIndeedCompanies();
           break;
         default:
           throw new Error(`Unsupported discovery source: ${source}`);

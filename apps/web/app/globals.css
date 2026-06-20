@@ -49,4 +49,13 @@
     font-size: inherit;
     color: inherit;
   }
+
+  /* Hide scrollbars globally while preserving scroll functionality */
+  *::-webkit-scrollbar {
+    display: none;
+  }
+  * {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
 }
