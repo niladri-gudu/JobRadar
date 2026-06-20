@@ -5,6 +5,7 @@ import { crawlYcCompanies } from './crawler/yc.crawler';
 import { crawlProductHuntCompanies } from './crawler/ph.crawler';
 import { crawlWellfoundCompanies } from './crawler/wf.crawler';
 import { normalizeDomain, validateWebsite } from './crawler/validation.worker';
+import { runCareerIntelligence } from './crawler/discovery';
 
 // Redis connection options
 export const redisConnection: ConnectionOptions = {
@@ -44,8 +45,50 @@ export const discoveryQueue = new Queue(DISCOVERY_QUEUE_NAME, {
  */
 export const discoveryWorker = new Worker(
   DISCOVERY_QUEUE_NAME,
-  async (job: Job<DiscoveryJobPayload>) => {
-    const { source } = job.data;
+  async (job: Job<any>) => {
+    const { source, companyId, action } = job.data;
+
+    if (action === 'REFRESH_ALL_JOBS') {
+      console.log(`[Worker] Cron trigger: Distributing career intelligence crawls for all validated companies...`);
+      try {
+        const companies = await db.company.findMany({
+          where: { status: 'VALIDATED' },
+          select: { id: true, name: true },
+        });
+
+        console.log(`[Worker] Enqueuing jobs for ${companies.length} companies...`);
+        for (const company of companies) {
+          await discoveryQueue.add(
+            `cron-ci-${company.id}-${Date.now()}`,
+            { companyId: company.id }
+          );
+        }
+        return { status: 'success', enqueuedCount: companies.length };
+      } catch (err: any) {
+        console.error(`[Worker] Job refresh distribution failed:`, err.message || err);
+        throw err;
+      }
+    }
+
+    if (companyId) {
+      console.log(`[Worker] Starting career intelligence job ${job.id} for company ID: ${companyId}`);
+      try {
+        const result = await runCareerIntelligence(companyId);
+        return {
+          status: 'success',
+          source: 'CAREER_INTELLIGENCE',
+          companiesFound: 0,
+          companiesAdded: 0,
+          duplicates: 0,
+          failures: 0,
+          ...result
+        };
+      } catch (ciErr: any) {
+        console.error(`[Worker] Career intelligence job failed for company ID ${companyId}:`, ciErr.message || ciErr);
+        throw ciErr;
+      }
+    }
+
     console.log(`[Worker] Starting discovery job ${job.id} for source: ${source}`);
 
     // Create DiscoveryRun record
@@ -130,7 +173,7 @@ export const discoveryWorker = new Worker(
               }
 
               // Save to database
-              await db.company.create({
+              const createdCompany = await db.company.create({
                 data: {
                   name: company.name,
                   website: company.website,
@@ -142,6 +185,13 @@ export const discoveryWorker = new Worker(
               });
 
               companiesAdded++;
+
+              // Execute Career Intelligence Discovery immediately for the company
+              try {
+                await runCareerIntelligence(createdCompany.id);
+              } catch (ciErr) {
+                console.error(`[Worker] Career intelligence discovery failed for ${company.name}:`, ciErr);
+              }
             } catch (itemErr) {
               console.error(`[Worker] Error processing company ${company.name}:`, itemErr);
               failures++;

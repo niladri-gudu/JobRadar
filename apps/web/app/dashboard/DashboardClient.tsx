@@ -28,6 +28,23 @@ interface DashboardClientProps {
   user: User;
 }
 
+// Utility to recursively decode escaped HTML entities (like &lt;, &gt;, &quot;, &nbsp;, etc.)
+function decodeHtmlEntities(str: string): string {
+  if (!str) return '';
+  let decoded = str
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&nbsp;/g, ' ');
+  
+  if (decoded.includes('&lt;') || decoded.includes('&gt;')) {
+    decoded = decodeHtmlEntities(decoded);
+  }
+  return decoded;
+}
+
 export default function DashboardClient({ user }: DashboardClientProps) {
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
@@ -47,6 +64,16 @@ export default function DashboardClient({ user }: DashboardClientProps) {
   const [companyStatusFilter, setCompanyStatusFilter] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [pagination, setPagination] = useState({ page: 1, limit: 50, total: 0, pages: 1 });
+
+  // Opportunities Directory states
+  const [opportunities, setOpportunities] = useState<any[]>([]);
+  const [loadingOpportunities, setLoadingOpportunities] = useState(true);
+  const [oppSearch, setOppSearch] = useState('');
+  const [oppRemoteOnly, setOppRemoteOnly] = useState(false);
+  const [oppMinScore, setOppMinScore] = useState('');
+  const [oppCurrentPage, setOppCurrentPage] = useState(1);
+  const [oppPagination, setOppPagination] = useState({ page: 1, limit: 15, total: 0, pages: 1 });
+  const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
 
   // Company stats
   const [stats, setStats] = useState<any>({ total: 0, validated: 0, rejected: 0, pending: 0, sources: {}, runsCount: 0 });
@@ -138,6 +165,35 @@ export default function DashboardClient({ user }: DashboardClientProps) {
     }
   };
 
+  // Fetch opportunities list
+  const fetchOpportunities = async (page = 1) => {
+    setLoadingOpportunities(true);
+    try {
+      const query = new URLSearchParams({
+        page: page.toString(),
+        limit: '15',
+        search: oppSearch,
+        remoteOnly: oppRemoteOnly.toString(),
+        minScore: oppMinScore,
+      });
+
+      const res = await fetch(`${API_URL}/jobs?${query.toString()}`, {
+        credentials: 'include',
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setOpportunities(data.items || []);
+        setOppPagination(data.pagination || { page: 1, limit: 15, total: 0, pages: 1 });
+        setOppCurrentPage(page);
+      }
+    } catch (err) {
+      console.error('Error fetching opportunities:', err);
+    } finally {
+      setLoadingOpportunities(false);
+    }
+  };
+
   // Trigger initial fetch and filter changes
   useEffect(() => {
     fetchStats();
@@ -146,6 +202,12 @@ export default function DashboardClient({ user }: DashboardClientProps) {
   useEffect(() => {
     fetchCompanies(1);
   }, [API_URL, companySearch, companySourceFilter, companyStatusFilter]);
+
+  useEffect(() => {
+    if (resume) {
+      fetchOpportunities(1);
+    }
+  }, [API_URL, oppSearch, oppRemoteOnly, oppMinScore, activeTab, resume]);
 
   // Handle manual URL crawling submit
   const handleCrawlSubmit = async (e: React.FormEvent) => {
@@ -381,7 +443,7 @@ export default function DashboardClient({ user }: DashboardClientProps) {
                 </div>
               </div>
               <label className="flex items-center justify-center w-full py-1.5 border border-border-subtle rounded-[4px] font-mono text-[10px] text-ink-secondary bg-surface cursor-pointer hover:bg-surface-hover hover:text-ink-primary hover:border-ink-secondary transition-all duration-150 text-center">
-                <span>REPLACE PDF PORT</span>
+                <span>{uploading ? 'PARSING DATA...' : 'REPLACE PDF PORT'}</span>
                 <input 
                   type="file" 
                   accept="application/pdf" 
@@ -534,10 +596,10 @@ export default function DashboardClient({ user }: DashboardClientProps) {
                 className={`flex items-center gap-1.5 px-3 py-1 font-mono text-xs rounded-[4px] transition-all duration-150 ${activeTab === 'opportunities' ? 'bg-surface-hover text-ink-primary font-bold' : 'text-ink-secondary hover:text-ink-primary'}`}
               >
                 <Briefcase size={12} />
-                <span>OPPORTUNITIES (0)</span>
+                <span>OPPORTUNITIES ({oppPagination.total})</span>
               </button>
             </div>
-            <button onClick={() => { fetchStats(); fetchCompanies(1); }} className="w-7 h-7 border border-border-subtle rounded-[6px] flex items-center justify-center text-ink-secondary bg-canvas hover:text-ink-primary hover:bg-surface-hover">
+            <button onClick={() => { fetchStats(); fetchCompanies(1); fetchOpportunities(1); }} className="w-7 h-7 border border-border-subtle rounded-[6px] flex items-center justify-center text-ink-secondary bg-canvas hover:text-ink-primary hover:bg-surface-hover">
               <RefreshCw size={12} />
             </button>
           </div>
@@ -638,6 +700,7 @@ export default function DashboardClient({ user }: DashboardClientProps) {
                       <table className="w-full text-left border-collapse text-xs">
                         <thead>
                           <tr className="border-b border-border-subtle bg-canvas/30 font-mono text-ink-secondary text-[11px]">
+                            <th className="p-3 font-semibold w-[60px]">SR NO</th>
                             <th className="p-3 font-semibold">COMPANY NAME</th>
                             <th className="p-3 font-semibold">WEBSITE PORT</th>
                             <th className="p-3 font-semibold">INDUSTRY</th>
@@ -647,8 +710,11 @@ export default function DashboardClient({ user }: DashboardClientProps) {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-border-subtle">
-                          {companies.map((company) => (
+                          {companies.map((company, index) => (
                             <tr key={company.id} className="hover:bg-bg-hover transition-colors">
+                              <td className="p-3 font-mono text-ink-secondary">
+                                {String((currentPage - 1) * (pagination.limit || 15) + index + 1).padStart(2, '0')}
+                              </td>
                               <td className="p-3 font-semibold text-ink-primary">{company.name}</td>
                               <td className="p-3 font-mono text-accent-system">
                                 <a href={company.website} target="_blank" rel="noopener noreferrer" className="hover:underline flex items-center gap-1">
@@ -691,27 +757,43 @@ export default function DashboardClient({ user }: DashboardClientProps) {
                       </table>
 
                       {/* Pagination Controls */}
-                      {pagination.pages > 1 && (
-                        <div className="mt-auto border-t border-border-subtle p-3 flex justify-between items-center bg-canvas/20">
+                      <div className="mt-auto border-t border-border-subtle p-3 flex justify-between items-center bg-canvas/20">
+                        <div className="flex gap-1.5">
+                          <button
+                            onClick={() => fetchCompanies(1)}
+                            disabled={currentPage === 1}
+                            className="px-2.5 py-1 border border-border-subtle rounded-[4px] font-mono text-[11px] text-ink-secondary hover:enabled:text-ink-primary hover:enabled:border-ink-secondary bg-surface cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            [START]
+                          </button>
                           <button
                             onClick={() => fetchCompanies(currentPage - 1)}
                             disabled={currentPage === 1}
-                            className="px-2.5 py-1 border border-border-subtle rounded-[4px] font-mono text-[11px] text-ink-secondary hover:text-ink-primary hover:border-ink-secondary bg-surface cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="px-2.5 py-1 border border-border-subtle rounded-[4px] font-mono text-[11px] text-ink-secondary hover:enabled:text-ink-primary hover:enabled:border-ink-secondary bg-surface cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             [PREV_PORT]
                           </button>
-                          <span className="font-mono text-xs text-ink-secondary">
-                            SECTOR {currentPage} / {pagination.pages}
-                          </span>
+                        </div>
+                        <span className="font-mono text-xs text-ink-secondary">
+                          SECTOR {currentPage} / {pagination.pages || 1}
+                        </span>
+                        <div className="flex gap-1.5">
                           <button
                             onClick={() => fetchCompanies(currentPage + 1)}
-                            disabled={currentPage === pagination.pages}
-                            className="px-2.5 py-1 border border-border-subtle rounded-[4px] font-mono text-[11px] text-ink-secondary hover:text-ink-primary hover:border-ink-secondary bg-surface cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled={currentPage === (pagination.pages || 1)}
+                            className="px-2.5 py-1 border border-border-subtle rounded-[4px] font-mono text-[11px] text-ink-secondary hover:enabled:text-ink-primary hover:enabled:border-ink-secondary bg-surface cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                             [NEXT_PORT]
                           </button>
+                          <button
+                            onClick={() => fetchCompanies(pagination.pages || 1)}
+                            disabled={currentPage === (pagination.pages || 1)}
+                            className="px-2.5 py-1 border border-border-subtle rounded-[4px] font-mono text-[11px] text-ink-secondary hover:enabled:text-ink-primary hover:enabled:border-ink-secondary bg-surface cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            [END]
+                          </button>
                         </div>
-                      )}
+                      </div>
                     </div>
                   ) : (
                     <div className="p-12 text-center text-ink-secondary font-mono text-xs flex-1 flex flex-col items-center justify-center">
@@ -724,23 +806,279 @@ export default function DashboardClient({ user }: DashboardClientProps) {
 
             </div>
           ) : (
-            /* OPPORTUNITIES TAB (EMPTY PLACEHOLDER FOR PHASE 2) */
-            <div className="flex flex-col gap-3 mb-6">
-              <div className="p-12 border border-dashed border-border-subtle rounded-[6px] text-center text-ink-secondary flex flex-col items-center justify-center">
-                <Briefcase size={24} className="text-border-subtle mb-3" />
-                <p className="font-mono text-xs font-bold text-ink-primary mb-1">NO OPPORTUNITIES SURFACED YET</p>
-                <span className="text-[11px] max-w-md mb-4">
-                  Job Extraction & Crawler mechanisms are disabled for Phase 2. Startups database is active, and once crawler scripts are initiated in Phase 3, matching jobs will appear here.
-                </span>
-                <button 
-                  onClick={() => setActiveTab('companies')}
-                  className="px-3 py-1.5 border border-border-subtle hover:border-accent-system bg-surface hover:bg-surface-hover rounded-[6px] font-mono text-[11px] text-ink-primary"
-                >
-                  GOTO COMPANY DIRECTORY
-                </button>
+            /* OPPORTUNITIES TAB */
+            <div className="flex flex-col gap-4 flex-1">
+              {loadingResume ? (
+                <div className="p-12 text-center text-ink-secondary font-mono text-xs flex-1 flex items-center justify-center border border-border-subtle rounded-[6px] bg-surface">
+                  <span className="animate-pulse">DECRYPTING SECURITY PROFILE...</span>
+                </div>
+              ) : uploading ? (
+                <div className="flex-1 border border-border-subtle rounded-[6px] bg-surface flex flex-col items-center justify-center p-8 max-w-lg mx-auto my-12 text-center font-mono">
+                  <RefreshCw size={36} className="text-accent-system animate-spin mb-4" />
+                  <h3 className="text-sm font-bold text-ink-primary uppercase tracking-wider mb-2">
+                    GEMINI COGNITIVE PARSING IN PROGRESS
+                  </h3>
+                  <div className="w-full max-w-xs bg-canvas border border-border-subtle h-2.5 rounded-full overflow-hidden mb-4 p-[1px] relative">
+                    <div className="bg-accent-system h-full rounded-full animate-pulse w-[75%]" />
+                  </div>
+                  <p className="text-[11px] text-ink-secondary leading-relaxed">
+                    Parsing PDF contents, evaluating developer experience vector, and extracting structured skills indices via Google AI Studio. Please stand by...
+                  </p>
+                </div>
+              ) : !resume ? (
+                <div className="flex-1 border border-dashed border-border-subtle rounded-[6px] bg-surface flex flex-col items-center justify-center p-8 max-w-lg mx-auto my-12 text-center">
+                  <Briefcase size={36} className="text-accent-warn mb-4" />
+                  <h3 className="font-mono text-sm font-bold text-ink-primary uppercase tracking-wider mb-2">
+                    RELEVANCE VECTOR NOT INITIALIZED
+                  </h3>
+                  <p className="text-xs text-ink-secondary leading-relaxed mb-6">
+                    In order to match and display opportunities, you must inject your PDF resume. Our career intelligence matrix will parse your skills to dynamically score and prioritize backend & Web3 roles.
+                  </p>
+                  
+                  <label className="flex items-center justify-center gap-2 py-2 px-6 border border-border-subtle hover:border-accent-system bg-canvas text-ink-primary rounded-[6px] font-mono text-xs font-semibold cursor-pointer hover:bg-surface-hover transition-all duration-150">
+                    <span>{uploading ? 'PARSING PROFILE...' : 'INJECT PDF RESUME'}</span>
+                    <input 
+                      type="file" 
+                      accept="application/pdf" 
+                      onChange={handleFileUpload} 
+                      style={{ display: 'none' }}
+                      disabled={uploading}
+                    />
+                  </label>
+                  
+                  {error && <div className="font-mono text-[10px] text-red-500 mt-3 max-w-xs break-all">{error}</div>}
+                </div>
+              ) : (
+                <>
+              
+              {/* Opportunities Filters */}
+              <div className="flex justify-between items-center mb-1 flex-wrap gap-2">
+                <div className="flex gap-3 items-center flex-wrap">
+                  {/* Search opportunities */}
+                  <div className="relative flex items-center">
+                    <Search size={12} className="absolute left-2.5 text-ink-secondary" />
+                    <input 
+                      type="text" 
+                      placeholder="Search roles..."
+                      value={oppSearch}
+                      onChange={(e) => setOppSearch(e.target.value)}
+                      className="bg-surface border border-border-subtle rounded-[6px] py-1 px-3 pl-8 text-xs text-ink-primary w-[180px] focus:outline-none focus:border-accent-system focus:w-[220px] transition-all"
+                    />
+                  </div>
+
+                  {/* Score Filter */}
+                  <select
+                    value={oppMinScore}
+                    onChange={(e) => setOppMinScore(e.target.value)}
+                    className="bg-surface border border-border-subtle rounded-[6px] py-1 px-2.5 text-xs text-ink-primary focus:outline-none cursor-pointer"
+                  >
+                    <option value="">ALL SCORES</option>
+                    <option value="85">HIGH PRIORITY (85%+)</option>
+                    <option value="60">MID MATCH (60%+)</option>
+                    <option value="40">LOW MATCH (40%+)</option>
+                  </select>
+
+                  {/* Remote Toggle */}
+                  <label className="flex items-center gap-2 cursor-pointer font-mono text-xs text-ink-secondary hover:text-ink-primary">
+                    <input 
+                      type="checkbox"
+                      checked={oppRemoteOnly}
+                      onChange={(e) => setOppRemoteOnly(e.target.checked)}
+                      className="rounded-[3px] bg-surface border-border-subtle accent-accent-system focus:ring-0 cursor-pointer"
+                    />
+                    <span>REMOTE ONLY</span>
+                  </label>
+                </div>
+
+                {/* Counter */}
+                <div className="font-mono text-[10px] text-ink-secondary">
+                  SHOWING {opportunities.length} OF {oppPagination.total} TARGETS
+                </div>
               </div>
-            </div>
+
+              {/* Opportunities List Container */}
+              <div className="flex-1 flex flex-col">
+                {loadingOpportunities ? (
+                  <div className="p-12 text-center text-ink-secondary font-mono text-xs flex-1 flex items-center justify-center border border-border-subtle rounded-[6px] bg-surface">
+                    <span className="animate-pulse">PARSING HIGH-FIDELITY MATCH VECTOR INDEX...</span>
+                  </div>
+                ) : opportunities.length > 0 ? (
+                  <div className="flex-1 border border-border-subtle rounded-[6px] bg-surface overflow-hidden flex flex-col">
+                    <div className="flex-1 overflow-x-auto flex flex-col">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="border-b border-border-subtle bg-canvas/30 font-mono text-ink-secondary text-[11px]">
+                            <th className="p-3 font-semibold w-[60px]">SR NO</th>
+                            <th className="p-3 font-semibold">ROLE TITLE</th>
+                            <th className="p-3 font-semibold">COMPANY</th>
+                            <th className="p-3 font-semibold">LOCATION</th>
+                            <th className="p-3 font-semibold">RELEVANCE MATCH</th>
+                            <th className="p-3 font-semibold text-right">ACTION</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border-subtle">
+                          {opportunities.map((opp, index) => (
+                            <React.Fragment key={opp.id}>
+                              <tr 
+                                onClick={() => setExpandedJobId(expandedJobId === opp.id ? null : opp.id)}
+                                className={`hover:bg-bg-hover transition-colors cursor-pointer select-none ${expandedJobId === opp.id ? 'bg-bg-hover' : ''}`}
+                              >
+                                <td className="p-3 font-mono text-ink-secondary">
+                                  {String((oppCurrentPage - 1) * (oppPagination.limit || 15) + index + 1).padStart(2, '0')}
+                                </td>
+                                <td className="p-3 font-semibold text-ink-primary">
+                                  <span>{opp.title}</span>
+                                </td>
+                                <td className="p-3 font-mono text-ink-secondary">
+                                  <a 
+                                    href={opp.company.website} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer" 
+                                    className="hover:underline hover:text-accent-system flex items-center gap-0.5"
+                                    onClick={(e) => e.stopPropagation()} // Prevent expansion when clicking external link
+                                  >
+                                    <span>{opp.company.name}</span>
+                                    <ExternalLink size={10} />
+                                  </a>
+                                </td>
+                                <td className="p-3 font-mono">
+                                  <span className="bg-canvas border border-border-subtle px-1.5 py-0.5 rounded-[3px]">
+                                    {opp.location || 'Remote'}
+                                  </span>
+                                </td>
+                                <td className="p-3 font-mono">
+                                  <span className={`px-1.5 py-0.5 rounded-[3px] text-[10px] font-bold border ${
+                                    opp.relevanceScore >= 85 ? 'bg-accent-match/10 text-accent-match border-accent-match/20' :
+                                    opp.relevanceScore >= 60 ? 'bg-accent-warn/10 text-accent-warn border-accent-warn/20' :
+                                    'bg-canvas text-ink-secondary border-border-subtle'
+                                  }`}>
+                                    {opp.relevanceScore}% MATCH
+                                  </span>
+                                </td>
+                                <td className="p-3 text-right" onClick={(e) => e.stopPropagation()}>
+                                  <a 
+                                    href={opp.applyUrl} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="inline-flex px-2 py-1 border border-border-subtle hover:border-accent-system text-ink-primary rounded-[4px] font-mono text-[10px] bg-canvas hover:bg-surface-hover transition-all items-center gap-1 cursor-pointer"
+                                  >
+                                    <span>APPLY_PORT</span>
+                                    <ExternalLink size={10} />
+                                  </a>
+                                </td>
+                              </tr>
+                              {expandedJobId === opp.id && (
+                                <tr className="bg-canvas/40">
+                                  <td colSpan={6} className="p-4 border-b border-border-subtle">
+                                    <div 
+                                      className="border-l-2 border-accent-system bg-canvas p-4 rounded-r-[6px] text-xs text-ink-secondary leading-relaxed font-mono max-h-[300px] overflow-y-auto select-text"
+                                      onClick={(e) => e.stopPropagation()} // Prevent collapse when clicking details content
+                                    >
+                                      <style dangerouslySetInnerHTML={{ __html: `
+                                        .description-html p { margin-bottom: 8px; }
+                                        .description-html ul { list-style-type: disc; padding-left: 16px; margin-bottom: 8px; }
+                                        .description-html ol { list-style-type: decimal; padding-left: 16px; margin-bottom: 8px; }
+                                        .description-html li { margin-bottom: 4px; }
+                                        .description-html strong { color: var(--text-primary); font-weight: 600; }
+                                        .description-html a { color: var(--accent-system); text-decoration: underline; }
+                                      `}} />
+                                      <div className="font-bold text-ink-primary mb-2 text-[11px] tracking-wider uppercase flex justify-between items-center">
+                                        <span>JOB DESCRIPTION DETAILS & SPECIFICATIONS:</span>
+                                        <span className="text-[10px] text-accent-system font-normal">CLICK ROW AGAIN TO COLLAPSE</span>
+                                      </div>
+                                      <div className="mt-2 text-ink-secondary font-mono leading-relaxed description-html">
+                                        {opp.description ? (
+                                          <div dangerouslySetInnerHTML={{ __html: decodeHtmlEntities(opp.description) }} />
+                                        ) : (
+                                          'No details provided.'
+                                        )}
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              )}
+                            </React.Fragment>
+                          ))}
+                        </tbody>
+                      </table>
+
+                      {/* Google-Style Page Pagination */}
+                      <div className="mt-auto border-t border-border-subtle p-3 flex justify-between items-center bg-canvas/20">
+                        <div className="flex gap-1.5">
+                          <button
+                            onClick={() => fetchOpportunities(1)}
+                            disabled={oppCurrentPage === 1}
+                            className="px-2.5 py-1 border border-border-subtle rounded-[4px] font-mono text-[11px] text-ink-secondary hover:enabled:text-ink-primary hover:enabled:border-ink-secondary bg-surface cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            [START]
+                          </button>
+                          <button
+                            onClick={() => fetchOpportunities(oppCurrentPage - 1)}
+                            disabled={oppCurrentPage === 1}
+                            className="px-2.5 py-1 border border-border-subtle rounded-[4px] font-mono text-[11px] text-ink-secondary hover:enabled:text-ink-primary hover:enabled:border-ink-secondary bg-surface cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            [PREV]
+                          </button>
+                        </div>
+                        
+                        <div className="flex gap-1">
+                          {(() => {
+                            const pages: number[] = [];
+                            const maxVisible = 5;
+                            let start = Math.max(1, oppCurrentPage - 2);
+                            let end = Math.min(oppPagination.pages || 1, start + maxVisible - 1);
+                            if (end - start + 1 < maxVisible) {
+                              start = Math.max(1, end - maxVisible + 1);
+                            }
+                            for (let p = start; p <= end; p++) {
+                              pages.push(p);
+                            }
+                            return pages.map(p => (
+                              <button
+                                key={p}
+                                onClick={() => fetchOpportunities(p)}
+                                className={`px-2.5 py-1 font-mono text-[11px] rounded-[4px] border ${
+                                  oppCurrentPage === p
+                                    ? 'bg-accent-system/10 text-accent-system border-accent-system/25 font-bold'
+                                    : 'border-border-subtle text-ink-secondary hover:text-ink-primary hover:border-ink-secondary bg-surface'
+                                }`}
+                              >
+                                {p}
+                              </button>
+                            ));
+                          })()}
+                        </div>
+
+                        <div className="flex gap-1.5">
+                          <button
+                            onClick={() => fetchOpportunities(oppCurrentPage + 1)}
+                            disabled={oppCurrentPage === (oppPagination.pages || 1)}
+                            className="px-2.5 py-1 border border-border-subtle rounded-[4px] font-mono text-[11px] text-ink-secondary hover:enabled:text-ink-primary hover:enabled:border-ink-secondary bg-surface cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            [NEXT]
+                          </button>
+                          <button
+                            onClick={() => fetchOpportunities(oppPagination.pages || 1)}
+                            disabled={oppCurrentPage === (oppPagination.pages || 1)}
+                            className="px-2.5 py-1 border border-border-subtle rounded-[4px] font-mono text-[11px] text-ink-secondary hover:enabled:text-ink-primary hover:enabled:border-ink-secondary bg-surface cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            [END]
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-12 text-center text-ink-secondary font-mono text-xs flex-1 flex flex-col items-center justify-center border border-border-subtle rounded-[6px] bg-surface min-h-[300px]">
+                    <Briefcase size={24} className="mb-2 text-border-subtle" />
+                    <span>NO RELEVANT OPPORTUNITIES DISCOVERED CORRESPONDING TO THE TARGET FILTER VECTOR.</span>
+                  </div>
+                )}
+              </div>
+            </>
           )}
+        </div>
+      )}
         </div>
 
         {/* Systems Monitor Log Stream at bottom */}

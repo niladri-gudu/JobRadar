@@ -1,4 +1,5 @@
 import { db } from '@repo/database';
+import { discoveryQueue } from '../discover/discover.service';
 import dns from 'dns';
 import { promisify } from 'util';
 
@@ -263,10 +264,20 @@ export async function discoverCompanyUrl(websiteUrl: string) {
     };
   }
 
+  // Queue Career Intelligence job to extract and score roles in the background
+  try {
+    await discoveryQueue.add(
+      `discover-ci-manual-${company.id}-${Date.now()}`,
+      { companyId: company.id }
+    );
+  } catch (queueErr: any) {
+    console.error(`[Company Service] Failed to queue Career Intelligence job for ${companyName}:`, queueErr.message || queueErr);
+  }
+
   return {
     status: 'success',
     company,
-    message: `Successfully crawled and validated company: ${company.name}`,
+    message: `Successfully crawled and validated company: ${company.name}. Job board queue initialized.`,
   };
 }
 

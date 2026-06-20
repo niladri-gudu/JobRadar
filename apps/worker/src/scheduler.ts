@@ -48,6 +48,18 @@ export async function setupScheduler() {
     );
     console.log('[Scheduler] Scheduled repeatable job: Discover Wellfound (9:00 AM daily)');
 
+    // 3. Add repeatable job to refresh all existing company jobs daily at 10:00 AM
+    await discoveryQueue.add(
+      'refresh-all-jobs',
+      { action: 'REFRESH_ALL_JOBS' },
+      {
+        repeat: {
+          pattern: '0 10 * * *',
+        },
+      }
+    );
+    console.log('[Scheduler] Scheduled repeatable job: Refresh All Jobs (10:00 AM daily)');
+
   } catch (err) {
     console.error('[Scheduler] Failed to setup repeatable jobs:', err);
   }

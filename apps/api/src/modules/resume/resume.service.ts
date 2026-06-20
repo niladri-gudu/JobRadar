@@ -4,6 +4,21 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { config } from '../../config';
 import fs from 'fs/promises';
 import path from 'path';
+import { extractSkills } from '../job/job.service';
+
+export interface AIResumeProfile {
+  isValidDeveloperResume: boolean;
+  skills: string[];
+  experienceLevel: 'junior' | 'mid' | 'senior' | 'lead';
+  roles: string[];
+  reasoning: string;
+}
+
+export interface StoredResumeJson {
+  rawText: string;
+  aiProfile: AIResumeProfile;
+}
+
 
 export class ResumeService {
   private s3Client: S3Client | null = null;
@@ -85,19 +100,164 @@ export class ResumeService {
   }
 
   /**
+   * Calls Google Gemini API to analyze the resume.
+   */
+  async analyzeResumeWithGemini(rawText: string): Promise<AIResumeProfile> {
+    const apiKey = config.ai.geminiApiKey;
+    if (!apiKey) {
+      throw new Error('GEMINI_API_KEY is not configured');
+    }
+
+    const model = config.ai.model || 'gemini-2.5-flash';
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+    const prompt = `You are an AI assistant specialized in developer resume parsing and verification.
+Analyze the following text extracted from an uploaded document.
+
+Document Text:
+"""
+${rawText}
+"""
+
+Determine if this is a valid software developer, software engineer, web developer, data engineer, devops, or technology professional resume.
+For example, if the document is an identity card, Aadhar card, passport, driver's license, school/college marksheet, utility bill, or a completely non-technical resume (like pure marketing, sales, hospitality, HR, writer, etc.), it is NOT a valid developer resume.
+
+Output a JSON response in the following format:
+{
+  "isValidDeveloperResume": boolean,
+  "skills": string[],
+  "experienceLevel": "junior" | "mid" | "senior" | "lead",
+  "roles": string[],
+  "reasoning": string
+}
+
+Rules for JSON values:
+- isValidDeveloperResume: true if this is indeed a technology/software developer/engineer resume or contains developer work history. Otherwise false.
+- skills: an array of lowercase strings representing normalized technology names found in the resume (e.g. "javascript", "typescript", "nodejs", "postgres", "react", "golang", "go", "python", "aws", "git", "rust"). Ensure it only contains developer and infrastructure skills.
+- experienceLevel: best fit based on keywords or years of experience.
+- roles: array of roles like "backend", "frontend", "fullstack", "devops", "web3", "data-engineer", etc.
+- reasoning: a concise 1-2 sentence explanation of why the document was categorized this way and what profile was found.
+
+Output ONLY valid JSON. No other text or markdown wrappers.`;
+
+    let lastError: any;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    text: prompt,
+                  },
+                ],
+              },
+            ],
+            generationConfig: {
+              responseMimeType: 'application/json',
+            },
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          const err = new Error(`Gemini API error (${response.status}): ${errorText}`);
+          (err as any).status = response.status;
+          throw err;
+        }
+
+        const result = (await response.json()) as any;
+        const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!text) {
+          throw new Error('Gemini API returned empty response');
+        }
+
+        return JSON.parse(text.trim());
+      } catch (error: any) {
+        lastError = error;
+        if (error.status === 429 || error.status === 503 || error.message?.includes('503') || error.message?.includes('429')) {
+          const delay = Math.pow(2, attempt) * 1000;
+          console.warn(`Gemini API busy (status ${error.status}). Retrying in ${delay}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw lastError || new Error('Gemini API call failed after retries');
+  }
+
+  /**
+   * Local programmatic fallback analyzer.
+   */
+  analyzeResumeProgrammatic(rawText: string): AIResumeProfile {
+    const skills = extractSkills(rawText);
+    const cleanText = rawText.toLowerCase();
+
+    // If the document has zero developer skills, it's not a valid developer resume
+    const isValidDeveloperResume = skills.length > 0;
+
+    let experienceLevel: 'junior' | 'mid' | 'senior' | 'lead' = 'mid';
+    if (cleanText.includes('senior') || cleanText.includes('sr.') || cleanText.includes('lead') || cleanText.includes('architect') || cleanText.includes('principal')) {
+      experienceLevel = 'senior';
+    } else if (cleanText.includes('junior') || cleanText.includes('jr.') || cleanText.includes('intern') || cleanText.includes('entry level') || cleanText.includes('fresher') || cleanText.includes('student')) {
+      experienceLevel = 'junior';
+    }
+
+    const roles: string[] = [];
+    if (cleanText.includes('backend') || cleanText.includes('back-end')) roles.push('backend');
+    if (cleanText.includes('frontend') || cleanText.includes('front-end')) roles.push('frontend');
+    if (cleanText.includes('fullstack') || cleanText.includes('full stack')) roles.push('fullstack');
+    if (cleanText.includes('devops') || cleanText.includes('infrastructure')) roles.push('devops');
+    if (cleanText.includes('web3') || cleanText.includes('blockchain') || cleanText.includes('solidity')) roles.push('web3');
+    if (roles.length === 0) roles.push('backend'); // fallback
+
+    return {
+      isValidDeveloperResume,
+      skills,
+      experienceLevel,
+      roles,
+      reasoning: 'Programmatic fallback analysis (no LLM key or call failed).',
+    };
+  }
+
+  /**
    * Upserts the parsed resume data in the database.
    */
   async upsertResume(userId: string, fileUrl: string, parsedText: string) {
+    let aiProfile: AIResumeProfile;
+
+    if (config.ai.geminiApiKey) {
+      try {
+        aiProfile = await this.analyzeResumeWithGemini(parsedText);
+      } catch (error) {
+        console.error('Gemini resume analysis failed, falling back to programmatic:', error);
+        aiProfile = this.analyzeResumeProgrammatic(parsedText);
+      }
+    } else {
+      aiProfile = this.analyzeResumeProgrammatic(parsedText);
+    }
+
+    const storedContent = JSON.stringify({
+      rawText: parsedText,
+      aiProfile,
+    });
+
     return db.resume.upsert({
       where: { userId },
       create: {
         userId,
         fileUrl,
-        parsedText,
+        parsedText: storedContent,
       },
       update: {
         fileUrl,
-        parsedText,
+        parsedText: storedContent,
       },
     });
   }

@@ -4,6 +4,16 @@ import { fromNodeHeaders } from 'better-auth/node';
 import { auth } from '../../lib/auth';
 import '@fastify/multipart'; // for TypeScript declaration merging
 
+function getRawTextSnippet(parsedText: string): string {
+  try {
+    const data = JSON.parse(parsedText);
+    const rawText = data?.rawText || '';
+    return rawText.slice(0, 150) + (rawText.length > 150 ? '...' : '');
+  } catch {
+    return parsedText.slice(0, 150) + (parsedText.length > 150 ? '...' : '');
+  }
+}
+
 export class ResumeController {
   private resumeService = new ResumeService();
 
@@ -50,7 +60,7 @@ export class ResumeController {
           id: resume.id,
           fileUrl: resume.fileUrl,
           createdAt: resume.createdAt,
-          parsedTextSnippet: parsedText.slice(0, 150) + (parsedText.length > 150 ? '...' : ''),
+          parsedTextSnippet: getRawTextSnippet(resume.parsedText),
         },
       });
     } catch (error: any) {
@@ -79,7 +89,7 @@ export class ResumeController {
           id: resume.id,
           fileUrl: resume.fileUrl,
           createdAt: resume.createdAt,
-          parsedTextSnippet: resume.parsedText.slice(0, 150) + (resume.parsedText.length > 150 ? '...' : ''),
+          parsedTextSnippet: getRawTextSnippet(resume.parsedText),
         },
       });
     } catch (error: any) {

@@ -46,6 +46,16 @@ enum CompanyStatus {
   REJECTED
 }
 
+enum ATSProvider {
+  GREENHOUSE
+  LEVER
+  ASHBY
+  WORKABLE
+  SMARTRECRUITERS
+  BAMBOOHR
+  TEAMTAILOR
+}
+
 model Company {
   id               String        @id @default(uuid())
   name             String
@@ -76,15 +86,18 @@ model DiscoveryRun {
 }
 
 model CareerPage {
-  id             String     @id @default(uuid())
-  companyId      String
-  company        Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  url            String
-  crawlFrequency String     @default("daily")
-  lastCrawledAt  DateTime?
-  status         String     @default("pending")
-  crawlRuns      CrawlRun[]
-  jobs           Job[]
+  id              String       @id @default(uuid())
+  companyId       String
+  company         Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  url             String
+  atsProvider     ATSProvider?
+  isValid         Boolean      @default(false)
+  lastValidatedAt DateTime?
+  crawlFrequency  String       @default("daily")
+  lastCrawledAt   DateTime?
+  status          String       @default("pending")
+  crawlRuns       CrawlRun[]
+  jobs            Job[]
 
   @@map("career_pages")
 }
@@ -107,6 +120,7 @@ model Job {
   applyUrl        String?
   postedAt        DateTime?
   isActive        Boolean        @default(true)
+  relevanceScore  Int            @default(0)
   snapshots       JobSnapshot[]
   embeddings      JobEmbedding[]
   matches         JobMatch[]
