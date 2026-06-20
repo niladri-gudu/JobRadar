@@ -128,6 +128,7 @@ model Job {
   alerts          Alert[]
   applications    Application[]
   contacts        JobContact[]
+  outreachTemplates OutreachTemplate[]
 
   @@map("jobs")
 }
@@ -284,6 +285,7 @@ model Contact {
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
   jobs            JobContact[]
+  outreachTemplates OutreachTemplate[]
 
   @@map("contacts")
 }
@@ -301,3 +303,18 @@ model JobContact {
   @@unique([jobId, contactId])
   @@map("job_contacts")
 }
+
+model OutreachTemplate {
+  id        String   @id @default(uuid())
+  jobId     String
+  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  contactId String
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  type      String   // LINKEDIN, TWITTER_DM, COLD_EMAIL
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+
+  @@unique([jobId, contactId, type])
+  @@map("outreach_templates")
+}
+

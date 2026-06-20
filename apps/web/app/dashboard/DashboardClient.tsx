@@ -125,6 +125,12 @@ export default function DashboardClient({ user }: DashboardClientProps) {
   const [oppContacts, setOppContacts] = useState<{ [jobId: string]: any[] }>({});
   const [loadingContacts, setLoadingContacts] = useState<{ [jobId: string]: boolean }>({});
 
+  // Outreach states
+  const [outreachTemplates, setOutreachTemplates] = useState<{ [contactId: string]: any[] }>({});
+  const [generatingOutreach, setGeneratingOutreach] = useState<{ [contactId: string]: boolean }>({});
+  const [activeOutreachTab, setActiveOutreachTab] = useState<{ [contactId: string]: 'COLD_EMAIL' | 'LINKEDIN' | 'TWITTER_DM' }>({});
+  const [copiedStates, setCopiedStates] = useState<{ [key: string]: boolean }>({});
+
   // Company stats
   const [stats, setStats] = useState<any>({ total: 0, validated: 0, rejected: 0, pending: 0, sources: {}, runsCount: 0 });
   const [loadingStats, setLoadingStats] = useState(true);
@@ -257,13 +263,165 @@ export default function DashboardClient({ user }: DashboardClientProps) {
       });
       if (res.ok) {
         const data = await res.json();
-        setOppContacts(prev => ({ ...prev, [jobId]: data.contacts || [] }));
+        const contacts = data.contacts || [];
+        setOppContacts(prev => ({ ...prev, [jobId]: contacts }));
+
+        // Proactively fetch outreach templates for each contact
+        for (const contact of contacts) {
+          fetchOutreachTemplates(jobId, contact.id);
+        }
       }
     } catch (err) {
       console.error('Error fetching job contacts:', err);
     } finally {
       setLoadingContacts(prev => ({ ...prev, [jobId]: false }));
     }
+  };
+
+  // Fetch outreach templates for a specific job and contact
+  const fetchOutreachTemplates = async (jobId: string, contactId: string) => {
+    if (outreachTemplates[contactId]) return; // already loaded
+    try {
+      const res = await fetch(`${API_URL}/jobs/${jobId}/contacts/${contactId}/outreach`, {
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setOutreachTemplates(prev => ({ ...prev, [contactId]: data.templates || [] }));
+        if (data.templates && data.templates.length > 0) {
+          setActiveOutreachTab(prev => ({ ...prev, [contactId]: 'COLD_EMAIL' }));
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching outreach templates:', err);
+    }
+  };
+
+  // Generate outreach templates
+  const generateOutreachTemplates = async (jobId: string, contactId: string) => {
+    setGeneratingOutreach(prev => ({ ...prev, [contactId]: true }));
+    try {
+      const res = await fetch(`${API_URL}/jobs/${jobId}/contacts/${contactId}/outreach`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setOutreachTemplates(prev => ({ ...prev, [contactId]: data.templates || [] }));
+        setActiveOutreachTab(prev => ({ ...prev, [contactId]: 'COLD_EMAIL' }));
+      } else {
+        const data = await res.json();
+        alert(data.message || 'Failed to generate outreach templates');
+      }
+    } catch (err) {
+      console.error('Error generating outreach templates:', err);
+      alert('Error connecting to backend API');
+    } finally {
+      setGeneratingOutreach(prev => ({ ...prev, [contactId]: false }));
+    }
+  };
+
+  const handleCopy = (key: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedStates(prev => ({ ...prev, [key]: true }));
+    setTimeout(() => {
+      setCopiedStates(prev => ({ ...prev, [key]: false }));
+    }, 2000);
+  };
+
+  const renderOutreachInterface = (jobId: string, contactId: string) => {
+    const templates = outreachTemplates[contactId] || [];
+    const isGenerating = generatingOutreach[contactId] || false;
+    const currentTab = activeOutreachTab[contactId] || 'COLD_EMAIL';
+
+    const activeTemplate = templates.find((t: any) => t.type === currentTab);
+    const activeContent = activeTemplate?.content || '';
+
+    if (!resume) {
+      return (
+        <button
+          type="button"
+          disabled={true}
+          className="mt-2 text-[9px] w-full text-center py-1.5 border border-border-subtle opacity-50 bg-canvas text-ink-secondary font-mono rounded-[4px] cursor-not-allowed"
+          title="Upload resume to enable AI outreach generation"
+        >
+          [UPLOAD_RESUME_TO_GENERATE_AI_OUTREACH]
+        </button>
+      );
+    }
+
+    if (templates.length === 0 && !isGenerating) {
+      return (
+        <button
+          type="button"
+          onClick={() => generateOutreachTemplates(jobId, contactId)}
+          className="mt-2 text-[9px] w-full text-center py-1.5 border border-border-subtle hover:border-accent-system bg-surface hover:bg-surface-hover text-ink-primary font-mono rounded-[4px] cursor-pointer transition-all duration-150"
+        >
+          [GENERATE_AI_OUTREACH]
+        </button>
+      );
+    }
+
+    return (
+      <div className="mt-2 border border-border-subtle bg-canvas/30 rounded-[4px] overflow-hidden flex flex-col font-mono text-[9px]">
+        {/* Tab Headers */}
+        <div className="flex border-b border-border-subtle bg-canvas/50">
+          {(['COLD_EMAIL', 'LINKEDIN', 'TWITTER_DM'] as const).map(tab => {
+            const isSelected = currentTab === tab;
+            const tabLabel = tab === 'COLD_EMAIL' ? 'EMAIL' : tab === 'LINKEDIN' ? 'LINKEDIN' : 'TWITTER/X';
+            const exists = templates.some((t: any) => t.type === tab);
+            if (!exists) return null;
+            return (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveOutreachTab(prev => ({ ...prev, [contactId]: tab }))}
+                className={`flex-1 text-center py-1 text-[8px] font-semibold border-r border-border-subtle last:border-r-0 cursor-pointer ${
+                  isSelected
+                    ? 'bg-bg-hover text-accent-system font-bold font-semibold'
+                    : 'text-ink-secondary hover:text-ink-primary'
+                }`}
+              >
+                {tabLabel}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Tab Content */}
+        <div className="p-2 flex flex-col gap-1.5">
+          {isGenerating ? (
+            <div className="text-accent-system animate-pulse py-3 text-center text-[9px]">
+              RE-GENERATING COMM CHANNELS...
+            </div>
+          ) : (
+            <>
+              <div className="bg-canvas border border-border-subtle p-2 rounded max-h-[120px] overflow-y-auto whitespace-pre-wrap text-ink-primary select-text select-all leading-normal text-[8px] font-mono scrollbar-thin">
+                {activeContent || 'No draft content available.'}
+              </div>
+              <div className="flex gap-2 justify-between items-center mt-1">
+                <button
+                  type="button"
+                  onClick={() => handleCopy(`${contactId}_${currentTab}`, activeContent)}
+                  className="px-2 py-0.5 border border-border-subtle hover:border-accent-match bg-surface text-ink-primary rounded-[3px] text-[8px] cursor-pointer hover:bg-surface-hover flex items-center gap-1 transition-all"
+                >
+                  <span>{copiedStates[`${contactId}_${currentTab}`] ? '[COPIED_TO_CLIPBOARD]' : '[COPY_DRAFT]'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => generateOutreachTemplates(jobId, contactId)}
+                  className="text-ink-secondary hover:text-accent-system text-[8px] cursor-pointer"
+                  title="Regenerate this draft via Gemini"
+                >
+                  [REGENERATE]
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
   };
 
   const handleOpportunityClick = (jobId: string) => {
@@ -1325,6 +1483,7 @@ export default function DashboardClient({ user }: DashboardClientProps) {
                                                       </a>
                                                     )}
                                                   </div>
+                                                  {renderOutreachInterface(opp.id, contact.id)}
                                                 </div>
                                               ))}
                                             </div>
@@ -1505,6 +1664,7 @@ export default function DashboardClient({ user }: DashboardClientProps) {
                                               </a>
                                             )}
                                           </div>
+                                          {renderOutreachInterface(opp.id, contact.id)}
                                         </div>
                                       ))}
                                     </div>
