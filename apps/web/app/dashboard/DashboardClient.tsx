@@ -74,6 +74,8 @@ export default function DashboardClient({ user }: DashboardClientProps) {
   const [oppCurrentPage, setOppCurrentPage] = useState(1);
   const [oppPagination, setOppPagination] = useState({ page: 1, limit: 15, total: 0, pages: 1 });
   const [expandedJobId, setExpandedJobId] = useState<string | null>(null);
+  const [oppContacts, setOppContacts] = useState<{ [jobId: string]: any[] }>({});
+  const [loadingContacts, setLoadingContacts] = useState<{ [jobId: string]: boolean }>({});
 
   // Company stats
   const [stats, setStats] = useState<any>({ total: 0, validated: 0, rejected: 0, pending: 0, sources: {}, runsCount: 0 });
@@ -191,6 +193,34 @@ export default function DashboardClient({ user }: DashboardClientProps) {
       console.error('Error fetching opportunities:', err);
     } finally {
       setLoadingOpportunities(false);
+    }
+  };
+
+  // Fetch contacts for job ID
+  const fetchJobContacts = async (jobId: string) => {
+    if (oppContacts[jobId]) return; // already loaded
+    setLoadingContacts(prev => ({ ...prev, [jobId]: true }));
+    try {
+      const res = await fetch(`${API_URL}/jobs/${jobId}/contacts`, {
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setOppContacts(prev => ({ ...prev, [jobId]: data.contacts || [] }));
+      }
+    } catch (err) {
+      console.error('Error fetching job contacts:', err);
+    } finally {
+      setLoadingContacts(prev => ({ ...prev, [jobId]: false }));
+    }
+  };
+
+  const handleOpportunityClick = (jobId: string) => {
+    if (expandedJobId === jobId) {
+      setExpandedJobId(null);
+    } else {
+      setExpandedJobId(jobId);
+      fetchJobContacts(jobId);
     }
   };
 
@@ -920,7 +950,7 @@ export default function DashboardClient({ user }: DashboardClientProps) {
                           {opportunities.map((opp, index) => (
                             <React.Fragment key={opp.id}>
                               <tr 
-                                onClick={() => setExpandedJobId(expandedJobId === opp.id ? null : opp.id)}
+                                onClick={() => handleOpportunityClick(opp.id)}
                                 className={`hover:bg-bg-hover transition-colors cursor-pointer select-none ${expandedJobId === opp.id ? 'bg-bg-hover' : ''}`}
                               >
                                 <td className="p-3 font-mono text-ink-secondary">
@@ -971,26 +1001,104 @@ export default function DashboardClient({ user }: DashboardClientProps) {
                                 <tr className="bg-canvas/40">
                                   <td colSpan={6} className="p-4 border-b border-border-subtle">
                                     <div 
-                                      className="border-l-2 border-accent-system bg-canvas p-4 rounded-r-[6px] text-xs text-ink-secondary leading-relaxed font-mono max-h-[300px] overflow-y-auto select-text"
+                                      className="grid grid-cols-1 md:grid-cols-5 gap-4"
                                       onClick={(e) => e.stopPropagation()} // Prevent collapse when clicking details content
                                     >
-                                      <style dangerouslySetInnerHTML={{ __html: `
-                                        .description-html p { margin-bottom: 8px; }
-                                        .description-html ul { list-style-type: disc; padding-left: 16px; margin-bottom: 8px; }
-                                        .description-html ol { list-style-type: decimal; padding-left: 16px; margin-bottom: 8px; }
-                                        .description-html li { margin-bottom: 4px; }
-                                        .description-html strong { color: var(--text-primary); font-weight: 600; }
-                                        .description-html a { color: var(--accent-system); text-decoration: underline; }
-                                      `}} />
-                                      <div className="font-bold text-ink-primary mb-2 text-[11px] tracking-wider uppercase flex justify-between items-center">
-                                        <span>JOB DESCRIPTION DETAILS & SPECIFICATIONS:</span>
-                                        <span className="text-[10px] text-accent-system font-normal">CLICK ROW AGAIN TO COLLAPSE</span>
+                                      {/* Job Description (Left 3 columns) */}
+                                      <div className="md:col-span-3 border-r border-border-subtle pr-4">
+                                        <style dangerouslySetInnerHTML={{ __html: `
+                                          .description-html p { margin-bottom: 8px; }
+                                          .description-html ul { list-style-type: disc; padding-left: 16px; margin-bottom: 8px; }
+                                          .description-html ol { list-style-type: decimal; padding-left: 16px; margin-bottom: 8px; }
+                                          .description-html li { margin-bottom: 4px; }
+                                          .description-html strong { color: var(--text-primary); font-weight: 600; }
+                                          .description-html a { color: var(--accent-system); text-decoration: underline; }
+                                        `}} />
+                                        <div className="font-bold text-ink-primary mb-2 text-[11px] tracking-wider uppercase flex justify-between items-center">
+                                          <span>JOB DESCRIPTION DETAILS & SPECIFICATIONS:</span>
+                                        </div>
+                                        <div className="mt-2 text-ink-secondary font-mono leading-relaxed description-html max-h-[300px] overflow-y-auto select-text">
+                                          {opp.description ? (
+                                            <div dangerouslySetInnerHTML={{ __html: decodeHtmlEntities(opp.description) }} />
+                                          ) : (
+                                            'No details provided.'
+                                          )}
+                                        </div>
                                       </div>
-                                      <div className="mt-2 text-ink-secondary font-mono leading-relaxed description-html">
-                                        {opp.description ? (
-                                          <div dangerouslySetInnerHTML={{ __html: decodeHtmlEntities(opp.description) }} />
+
+                                      {/* Hiring Contacts & Outreach (Right 2 columns) */}
+                                      <div className="md:col-span-2 flex flex-col gap-3 font-mono">
+                                        <div className="font-bold text-ink-primary text-[11px] tracking-wider uppercase">
+                                          <span>HIRING INTEL & CONTACT CHANNELS:</span>
+                                        </div>
+                                        
+                                        {loadingContacts[opp.id] ? (
+                                          <div className="text-ink-secondary text-[11px] animate-pulse py-4">
+                                            DISCOVERING CONTACT VECTORS...
+                                          </div>
+                                        ) : oppContacts[opp.id] && oppContacts[opp.id].length > 0 ? (
+                                          <div className="flex flex-col gap-2.5 overflow-y-auto max-h-[300px]">
+                                            {oppContacts[opp.id].map((contact: any) => (
+                                              <div key={contact.id} className="border border-border-subtle bg-canvas rounded-[4px] p-2.5 flex flex-col gap-1.5 hover:border-ink-secondary transition-all">
+                                                <div className="flex justify-between items-start">
+                                                  <div>
+                                                    <div className="text-ink-primary font-bold text-[11px]">{contact.name}</div>
+                                                    <div className="text-[10px] text-ink-secondary">{contact.role}</div>
+                                                  </div>
+                                                  <span className={`px-1.5 py-0.5 rounded-[3px] text-[8px] font-bold border ${
+                                                    contact.priority === 1 
+                                                      ? 'bg-accent-match/10 text-accent-match border-accent-match/20' 
+                                                      : 'bg-canvas text-ink-secondary border-border-subtle'
+                                                  }`}>
+                                                    {contact.priority === 1 ? 'TOP CONTACT' : `PRIORITY ${contact.priority}`}
+                                                  </span>
+                                                </div>
+                                                
+                                                {contact.matchReason && (
+                                                  <p className="text-[10px] text-ink-secondary italic leading-normal">
+                                                    &gt; {contact.matchReason}
+                                                  </p>
+                                                )}
+
+                                                <div className="flex gap-2 mt-1">
+                                                  {contact.email && (
+                                                    <a 
+                                                      href={`mailto:${contact.email}`}
+                                                      className="text-[9px] px-1.5 py-0.5 border border-border-subtle hover:border-accent-system bg-surface text-ink-primary rounded-[3px] flex items-center gap-1"
+                                                    >
+                                                      <span>EMAIL</span>
+                                                    </a>
+                                                  )}
+                                                  {contact.linkedinUrl && (
+                                                    <a 
+                                                      href={contact.linkedinUrl}
+                                                      target="_blank"
+                                                      rel="noopener noreferrer"
+                                                      className="text-[9px] px-1.5 py-0.5 border border-border-subtle hover:border-accent-system bg-surface text-ink-primary rounded-[3px] flex items-center gap-1"
+                                                    >
+                                                      <span>LINKEDIN</span>
+                                                      <ExternalLink size={8} />
+                                                    </a>
+                                                  )}
+                                                  {contact.twitterUrl && (
+                                                    <a 
+                                                      href={contact.twitterUrl}
+                                                      target="_blank"
+                                                      rel="noopener noreferrer"
+                                                      className="text-[9px] px-1.5 py-0.5 border border-border-subtle hover:border-accent-system bg-surface text-ink-primary rounded-[3px] flex items-center gap-1"
+                                                    >
+                                                      <span>TWITTER/X</span>
+                                                      <ExternalLink size={8} />
+                                                    </a>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
                                         ) : (
-                                          'No details provided.'
+                                          <div className="text-ink-secondary text-[11px] py-4 italic">
+                                            No hiring contact vectors discovered.
+                                          </div>
                                         )}
                                       </div>
                                     </div>

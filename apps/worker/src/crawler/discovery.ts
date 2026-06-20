@@ -1,5 +1,6 @@
 import * as cheerio from 'cheerio';
 import { db } from '@repo/database';
+import { discoverHiringContacts } from './contacts';
 
 export interface CrawledJob {
   title: string;
@@ -511,7 +512,7 @@ export async function runCareerIntelligence(companyId: string): Promise<Discover
       const relevanceScore = calculateRelevanceScore(job);
 
       // Create Job
-      await db.job.create({
+      const createdJob = await db.job.create({
         data: {
           companyId: company.id,
           careerPageId: careerPage.id,
@@ -524,6 +525,20 @@ export async function runCareerIntelligence(companyId: string): Promise<Discover
           isActive: true,
         },
       });
+
+      // Run contact discovery
+      try {
+        await discoverHiringContacts(
+          createdJob.id,
+          job.title,
+          job.description || '',
+          company.id,
+          company.name,
+          company.normalizedDomain
+        );
+      } catch (contactErr) {
+        console.error(`[Career Intelligence] Contact discovery failed for job ${job.title}:`, contactErr);
+      }
     }
     console.log(`[Career Intelligence] Stored ${jobsCount} jobs with computed relevance scores.`);
   } else {

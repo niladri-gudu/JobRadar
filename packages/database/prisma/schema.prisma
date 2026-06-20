@@ -68,6 +68,7 @@ model Company {
   createdAt        DateTime      @default(now())
   careerPages      CareerPage[]
   jobs             Job[]
+  contacts         Contact[]
 
   @@map("companies")
 }
@@ -126,6 +127,7 @@ model Job {
   matches         JobMatch[]
   alerts          Alert[]
   applications    Application[]
+  contacts        JobContact[]
 
   @@map("jobs")
 }
@@ -266,4 +268,36 @@ model Verification {
   updatedAt  DateTime? @updatedAt
 
   @@map("verifications")
+}
+
+model Contact {
+  id              String       @id @default(uuid())
+  companyId       String
+  company         Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name            String
+  role            String?
+  email           String?
+  linkedinUrl     String?
+  twitterUrl      String?
+  source          String       // DIRECT_EXTRACTION, COMPANY_DISCOVERY
+  confidenceScore Float        @default(1.0)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  jobs            JobContact[]
+
+  @@map("contacts")
+}
+
+model JobContact {
+  id          String   @id @default(uuid())
+  jobId       String
+  job         Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  contactId   String
+  contact     Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  priority    Int      @default(1)
+  matchReason String?  @db.Text
+  createdAt   DateTime @default(now())
+
+  @@unique([jobId, contactId])
+  @@map("job_contacts")
 }
