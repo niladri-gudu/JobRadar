@@ -604,7 +604,8 @@ export async function runCareerIntelligence(companyId: string): Promise<Discover
           job.description || '',
           company.id,
           company.name,
-          company.normalizedDomain
+          company.normalizedDomain,
+          relevanceScore
         );
       } catch (contactErr) {
         console.error(`[Career Intelligence] Contact discovery failed for job ${job.title}:`, contactErr);

@@ -10,6 +10,8 @@ import { resumeRoutes } from './modules/resume/resume.routes';
 import { discoverRoutes } from './modules/discover/discover.routes';
 import { companyRoutes } from './modules/company/company.routes';
 import { jobRoutes } from './modules/job/job.routes';
+import { applicationRoutes } from './modules/application/application.routes';
+
 
 const fastify = Fastify({
   logger: true,
@@ -59,6 +61,7 @@ fastify.register(resumeRoutes);
 fastify.register(discoverRoutes);
 fastify.register(companyRoutes);
 fastify.register(jobRoutes);
+fastify.register(applicationRoutes);
 
 const start = async () => {
   try {

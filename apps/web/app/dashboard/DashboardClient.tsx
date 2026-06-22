@@ -20,6 +20,7 @@ import {
   XCircle,
   AlertTriangle,
   FolderOpen,
+  FolderCheck,
   Menu,
   X,
   ChevronDown,
@@ -88,7 +89,7 @@ function getMatchExplanation(opp: any, resume: any): string {
 export default function DashboardClient({ user }: DashboardClientProps) {
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
-  const [activeTab, setActiveTab] = useState<'opportunities' | 'companies'>('companies');
+  const [activeTab, setActiveTab] = useState<'opportunities' | 'companies' | 'applications'>('companies');
 
   // Responsive UI states
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -130,6 +131,13 @@ export default function DashboardClient({ user }: DashboardClientProps) {
   const [generatingOutreach, setGeneratingOutreach] = useState<{ [contactId: string]: boolean }>({});
   const [activeOutreachTab, setActiveOutreachTab] = useState<{ [contactId: string]: 'COLD_EMAIL' | 'LINKEDIN' | 'TWITTER_DM' }>({});
   const [copiedStates, setCopiedStates] = useState<{ [key: string]: boolean }>({});
+
+  // Application Tracker states
+  const [applications, setApplications] = useState<any[]>([]);
+  const [loadingApplications, setLoadingApplications] = useState(true);
+  const [updatingAppId, setUpdatingAppId] = useState<string | null>(null);
+  const [editingNotesAppId, setEditingNotesAppId] = useState<string | null>(null);
+  const [editingNotesText, setEditingNotesText] = useState('');
 
   // Company stats
   const [stats, setStats] = useState<any>({ total: 0, validated: 0, rejected: 0, pending: 0, sources: {}, runsCount: 0 });
@@ -642,6 +650,132 @@ export default function DashboardClient({ user }: DashboardClientProps) {
     }
   };
 
+  // Fetch tracked applications
+  const fetchApplications = async () => {
+    setLoadingApplications(true);
+    try {
+      const res = await fetch(`${API_URL}/applications`, {
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setApplications(data.applications || []);
+      }
+    } catch (err) {
+      console.error('Error fetching applications:', err);
+    } finally {
+      setLoadingApplications(false);
+    }
+  };
+
+  // Add a job to tracker
+  const trackApplication = async (jobId: string) => {
+    try {
+      const res = await fetch(`${API_URL}/applications`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ jobId }),
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setApplications(prev => {
+          if (prev.some(app => app.id === data.application.id)) return prev;
+          return [data.application, ...prev];
+        });
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Failed to track application');
+      }
+    } catch (err) {
+      console.error('Error tracking application:', err);
+      alert('Error connecting to backend API');
+    }
+  };
+
+  // Update status (column transition)
+  const updateApplicationStatus = async (appId: string, newStatus: string) => {
+    setUpdatingAppId(appId);
+    try {
+      const res = await fetch(`${API_URL}/applications/${appId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: newStatus }),
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setApplications(prev =>
+          prev.map(app => (app.id === appId ? data.application : app))
+        );
+      }
+    } catch (err) {
+      console.error('Error updating application status:', err);
+    } finally {
+      setUpdatingAppId(null);
+    }
+  };
+
+  // Update notes
+  const updateApplicationNotes = async (appId: string, notes: string) => {
+    setUpdatingAppId(appId);
+    try {
+      const res = await fetch(`${API_URL}/applications/${appId}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ notes }),
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setApplications(prev =>
+          prev.map(app => (app.id === appId ? data.application : app))
+        );
+        setEditingNotesAppId(null);
+      }
+    } catch (err) {
+      console.error('Error updating application notes:', err);
+    } finally {
+      setUpdatingAppId(null);
+    }
+  };
+
+  // Delete/Remove tracked application
+  const deleteApplication = async (appId: string) => {
+    if (!confirm('Are you sure you want to stop tracking this application?')) return;
+    setUpdatingAppId(appId);
+    try {
+      const res = await fetch(`${API_URL}/applications/${appId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (res.ok) {
+        setApplications(prev => prev.filter(app => app.id !== appId));
+      }
+    } catch (err) {
+      console.error('Error deleting application:', err);
+    } finally {
+      setUpdatingAppId(null);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'applications') {
+      fetchApplications();
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    // Initial fetch of applications to display count in tabs
+    fetchApplications();
+  }, []);
+
   const handleLogout = async () => {
     setLoggingOut(true);
     try {
@@ -869,7 +1003,7 @@ export default function DashboardClient({ user }: DashboardClientProps) {
           </div>
           
           <div className="flex items-center justify-between sm:justify-start gap-3 w-full md:w-auto">
-            <div className="flex border border-border-subtle bg-canvas rounded-[6px] p-0.5 w-full sm:w-auto">
+            <div className="flex border border-border-subtle bg-canvas rounded-[6px] p-0.5 w-full sm:w-auto flex-wrap">
               <button 
                 onClick={() => setActiveTab('companies')}
                 className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 font-mono text-xs rounded-[4px] transition-all duration-150 ${activeTab === 'companies' ? 'bg-surface-hover text-ink-primary font-bold' : 'text-ink-secondary hover:text-ink-primary'}`}
@@ -887,6 +1021,15 @@ export default function DashboardClient({ user }: DashboardClientProps) {
                 <span className="hidden xs:inline">OPPORTUNITIES</span>
                 <span className="xs:hidden">OPPS</span>
                 <span>({oppPagination.total})</span>
+              </button>
+              <button 
+                onClick={() => setActiveTab('applications')}
+                className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 font-mono text-xs rounded-[4px] transition-all duration-150 ${activeTab === 'applications' ? 'bg-surface-hover text-ink-primary font-bold' : 'text-ink-secondary hover:text-ink-primary'}`}
+              >
+                <FolderCheck size={12} className="text-accent-system" />
+                <span className="hidden xs:inline">APP TRACKER</span>
+                <span className="xs:hidden">TRACK</span>
+                <span>({applications.length})</span>
               </button>
             </div>
             <button 
@@ -1180,7 +1323,7 @@ export default function DashboardClient({ user }: DashboardClientProps) {
               </div>
 
             </div>
-          ) : (
+          ) : activeTab === 'opportunities' ? (
             /* OPPORTUNITIES TAB */
             <div className="flex flex-col gap-4 flex-1">
               {loadingResume ? (
@@ -1377,15 +1520,34 @@ export default function DashboardClient({ user }: DashboardClientProps) {
                                     </span>
                                   </td>
                                   <td className="p-3 text-right" onClick={(e) => e.stopPropagation()}>
-                                    <a 
-                                      href={opp.applyUrl} 
-                                      target="_blank" 
-                                      rel="noopener noreferrer"
-                                      className="inline-flex px-2 py-1 border border-border-subtle hover:border-accent-system text-ink-primary rounded-[4px] font-mono text-[10px] bg-canvas hover:bg-surface-hover transition-all items-center gap-1 cursor-pointer"
-                                    >
-                                      <span>APPLY_PORT</span>
-                                      <ExternalLink size={10} />
-                                    </a>
+                                    {(() => {
+                                      const isTracked = applications.some((app: any) => app.jobId === opp.id);
+                                      return (
+                                        <div className="flex gap-2 justify-end items-center">
+                                          <button
+                                            type="button"
+                                            onClick={() => !isTracked && trackApplication(opp.id)}
+                                            disabled={isTracked}
+                                            className={`inline-flex px-2 py-1 border rounded-[4px] font-mono text-[10px] transition-all items-center cursor-pointer ${
+                                              isTracked 
+                                                ? 'border-border-subtle text-ink-secondary bg-canvas/30 cursor-not-allowed font-semibold' 
+                                                : 'border-border-subtle hover:border-accent-system text-ink-primary bg-canvas hover:bg-surface-hover'
+                                            }`}
+                                          >
+                                            <span>{isTracked ? '[TRACKED]' : '[TRACK]'}</span>
+                                          </button>
+                                          <a 
+                                            href={opp.applyUrl} 
+                                            target="_blank" 
+                                            rel="noopener noreferrer"
+                                            className="inline-flex px-2 py-1 border border-border-subtle hover:border-accent-system text-ink-primary rounded-[4px] font-mono text-[10px] bg-canvas hover:bg-surface-hover transition-all items-center gap-1 cursor-pointer"
+                                          >
+                                            <span>APPLY_PORT</span>
+                                            <ExternalLink size={10} />
+                                          </a>
+                                        </div>
+                                      );
+                                    })()}
                                   </td>
                                 </tr>
                                 {expandedJobId === opp.id && (
@@ -1562,15 +1724,34 @@ export default function DashboardClient({ user }: DashboardClientProps) {
                                 {expandedJobId === opp.id ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
                               </button>
                               
-                              <a 
-                                href={opp.applyUrl} 
-                                target="_blank" 
-                                rel="noopener noreferrer"
-                                className="inline-flex px-2 py-0.5 border border-border-subtle hover:border-accent-system text-ink-primary rounded-[3px] bg-canvas hover:bg-surface-hover transition-all items-center gap-1"
-                              >
-                                <span>APPLY_PORT</span>
-                                <ExternalLink size={9} />
-                              </a>
+                              {(() => {
+                                const isTracked = applications.some((app: any) => app.jobId === opp.id);
+                                return (
+                                  <div className="flex gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => !isTracked && trackApplication(opp.id)}
+                                      disabled={isTracked}
+                                      className={`inline-flex px-2 py-0.5 border rounded-[3px] font-mono text-[9px] transition-all items-center cursor-pointer ${
+                                        isTracked 
+                                          ? 'border-border-subtle text-ink-secondary bg-canvas/30 cursor-not-allowed font-semibold' 
+                                          : 'border-border-subtle hover:border-accent-system text-ink-primary bg-canvas hover:bg-surface-hover'
+                                      }`}
+                                    >
+                                      <span>{isTracked ? '[TRACKED]' : '[TRACK]'}</span>
+                                    </button>
+                                    <a 
+                                      href={opp.applyUrl} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer"
+                                      className="inline-flex px-2 py-0.5 border border-border-subtle hover:border-accent-system text-ink-primary rounded-[3px] bg-canvas hover:bg-surface-hover transition-all items-center gap-1"
+                                    >
+                                      <span>APPLY_PORT</span>
+                                      <ExternalLink size={9} />
+                                    </a>
+                                  </div>
+                                );
+                              })()}
                             </div>
 
                             {/* Mobile Expanded Content */}
@@ -1754,6 +1935,188 @@ export default function DashboardClient({ user }: DashboardClientProps) {
                 )}
               </div>
             </>
+          )}
+        </div>
+      ) : (
+        /* APPLICATIONS KANBAN TAB */
+        <div className="flex flex-col gap-4 flex-1">
+          <div className="flex justify-between items-center">
+            <h2 className="font-mono text-xs font-semibold text-ink-primary tracking-widest uppercase">
+              APPLICATION TRACKING KANBAN MATRIX
+            </h2>
+            <span className="font-mono text-[10px] text-ink-secondary">
+              TRACKING {applications.length} ACTIVE PIPELINES
+            </span>
+          </div>
+
+          {loadingApplications ? (
+            <div className="p-12 text-center text-ink-secondary font-mono text-xs flex-1 flex items-center justify-center border border-border-subtle rounded-[6px] bg-surface min-h-[300px]">
+              <span className="animate-pulse font-semibold">DECRYPTING APPLICATION REGISTRIES...</span>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 flex-1 min-h-[500px]">
+              {([
+                { id: 'applied', label: 'APPLIED', color: 'border-ink-secondary' },
+                { id: 'interviewing', label: 'INTERVIEWING', color: 'border-accent-system text-accent-system' },
+                { id: 'offer', label: 'OFFER', color: 'border-accent-match text-accent-match font-bold' },
+                { id: 'rejected', label: 'REJECTED', color: 'border-accent-warn text-accent-warn font-semibold' },
+              ] as const).map(column => {
+                const columnApps = applications.filter(app => app.status === column.id);
+                return (
+                  <div key={column.id} className="border border-border-subtle bg-surface rounded-[6px] p-3 flex flex-col gap-3 min-h-[300px]">
+                    <div className={`font-mono text-[10px] font-bold border-b border-border-subtle pb-2 flex justify-between items-center ${column.color}`}>
+                      <span>{column.label}</span>
+                      <span className="bg-canvas border border-border-subtle px-1.5 py-0.5 rounded-[3px] text-ink-secondary font-mono text-[9px]">
+                        {columnApps.length}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col gap-3 overflow-y-auto max-h-[550px] pr-1 scrollbar-thin flex-1">
+                      {columnApps.length > 0 ? (
+                        columnApps.map(app => {
+                          const isEditingNotes = editingNotesAppId === app.id;
+                          const isUpdating = updatingAppId === app.id;
+                          return (
+                            <div 
+                              key={app.id} 
+                              className={`border border-border-subtle bg-canvas rounded-[4px] p-3 flex flex-col gap-2 relative transition-all hover:border-ink-secondary ${isUpdating ? 'opacity-50 pointer-events-none' : ''}`}
+                            >
+                              <div>
+                                <div className="font-bold text-ink-primary text-xs leading-tight">
+                                  {app.job?.title || 'Unknown Role'}
+                                </div>
+                                <div className="font-mono text-[10px] text-ink-secondary mt-0.5">
+                                  {app.job?.company?.name || 'Unknown Company'}
+                                </div>
+                              </div>
+
+                              <div className="font-mono text-[9px] text-ink-secondary flex justify-between items-center border-t border-border-subtle/30 pt-1.5">
+                                <span>ADDED:</span>
+                                <span>{new Date(app.appliedAt).toLocaleDateString()}</span>
+                              </div>
+
+                              {/* Notes block */}
+                              <div className="border-l-2 border-border-subtle pl-2 py-0.5 bg-canvas/30 rounded-[3px]">
+                                {isEditingNotes ? (
+                                  <div className="flex flex-col gap-1.5 mt-1">
+                                    <textarea
+                                      value={editingNotesText}
+                                      onChange={(e) => setEditingNotesText(e.target.value)}
+                                      className="w-full bg-surface border border-border-subtle rounded p-1.5 text-[9px] font-mono text-ink-primary focus:outline-none focus:border-accent-system resize-y min-h-[50px]"
+                                      placeholder="Type notes (e.g. interview details, contact details)..."
+                                    />
+                                    <div className="flex gap-1.5 justify-end">
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingNotesAppId(null)}
+                                        className="px-2 py-0.5 border border-border-subtle rounded bg-canvas text-ink-secondary text-[8px] cursor-pointer"
+                                      >
+                                        CANCEL
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => updateApplicationNotes(app.id, editingNotesText)}
+                                        className="px-2 py-0.5 border border-accent-system text-accent-system rounded bg-canvas text-[8px] cursor-pointer"
+                                      >
+                                        SAVE
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="text-[9px] text-ink-secondary leading-normal whitespace-pre-wrap select-text">
+                                    {app.notes ? app.notes : <span className="italic opacity-60">No notes recorded.</span>}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Controls */}
+                              <div className="flex justify-between items-center mt-1 pt-1.5 border-t border-border-subtle/30 font-mono text-[9px]">
+                                <div className="flex gap-1">
+                                  {column.id !== 'applied' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const statuses = ['applied', 'interviewing', 'offer', 'rejected'];
+                                        const prevIdx = statuses.indexOf(column.id) - 1;
+                                        updateApplicationStatus(app.id, statuses[prevIdx]);
+                                      }}
+                                      className="px-1.5 py-0.5 border border-border-subtle hover:border-accent-system text-ink-secondary hover:text-ink-primary bg-surface rounded-[3px] cursor-pointer transition-all"
+                                      title="Move Left"
+                                    >
+                                      &lt;-
+                                    </button>
+                                  )}
+                                  {column.id !== 'rejected' && column.id !== 'offer' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const statuses = ['applied', 'interviewing', 'offer', 'rejected'];
+                                        const nextIdx = statuses.indexOf(column.id) + 1;
+                                        updateApplicationStatus(app.id, statuses[nextIdx]);
+                                      }}
+                                      className="px-1.5 py-0.5 border border-border-subtle hover:border-accent-system text-ink-secondary hover:text-ink-primary bg-surface rounded-[3px] cursor-pointer transition-all"
+                                      title="Move Right"
+                                    >
+                                      -&gt;
+                                    </button>
+                                  )}
+                                  {column.id === 'interviewing' && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => updateApplicationStatus(app.id, 'offer')}
+                                        className="px-1.5 py-0.5 border border-border-subtle hover:border-accent-match text-ink-secondary hover:text-accent-match bg-surface rounded-[3px] cursor-pointer transition-all"
+                                        title="Mark as Offer"
+                                      >
+                                        OFFER
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => updateApplicationStatus(app.id, 'rejected')}
+                                        className="px-1.5 py-0.5 border border-border-subtle hover:border-accent-warn text-ink-secondary hover:text-accent-warn bg-surface rounded-[3px] cursor-pointer transition-all"
+                                        title="Mark as Rejected"
+                                      >
+                                        REJ
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+
+                                <div className="flex gap-2">
+                                  {!isEditingNotes && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingNotesAppId(app.id);
+                                        setEditingNotesText(app.notes || '');
+                                      }}
+                                      className="text-accent-system hover:underline cursor-pointer"
+                                    >
+                                      [NOTES]
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteApplication(app.id)}
+                                    className="text-accent-warn hover:underline cursor-pointer"
+                                  >
+                                    [REMOVE]
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="py-8 text-center text-ink-secondary italic font-mono text-[9px]">
+                          Column is empty.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
       )}
